@@ -43,6 +43,8 @@ FEATURES
 - Session card: right-click > "Copy session card", then Ctrl+V in Discord.
 - Advanced stats (History > Analysis): kickoffs won, average boost, time at
   0 boost, supersonic time, goal map.
+- Discord status: your mode, session score and streak on your Discord
+  profile (Settings > Features, off by default).
 - Tilt alert: break suggestion after 3 losses in a row or 2 h of play.
 - Hides itself when the game is not in focus, resumes the session if
   restarted within 2 h, can start with Windows.

@@ -55,7 +55,7 @@ APP_VERSION = "1.1.0"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
 # "Application ID" Discord (https://discord.com/developers/applications) : vide = statut Discord indisponible
-DISCORD_CLIENT_ID = ""
+DISCORD_CLIENT_ID = "1561117533959098438"
 RESUME_HOURS = 2  # une session relancee dans ce delai reprend la ou elle en etait
 
 API_HOST = "127.0.0.1"

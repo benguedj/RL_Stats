@@ -44,6 +44,7 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 | **Trophies & records** | 26 trophies (first flip reset, aerial goal, hat trick, 140 km/h goal, 10 win streak…) and personal records, announced on the overlay. |
 | **Session card** | One click copies an image of your session to the clipboard, ready to paste in Discord. |
 | **Advanced stats** | Kickoffs won, average boost, time at 0 boost, supersonic time, map of where your goals go in. |
+| **Discord status** | Shows your mode, session score and streak on your Discord profile (Rich Presence, off by default). |
 | **Tilt alert** | Suggests a break after 3 losses in a row or 2 hours of play (can be turned off). |
 | **Smart display** | Hides itself when the game is not in focus, resumes your session if restarted within 2 h, can start with Windows and stay hidden until the game starts. |
 | **Update notifications** | Tells you when a new version is available on GitHub. |
@@ -147,7 +148,7 @@ Rocket League is a trademark of Psyonix LLC.*
 **Fonctionnalités** : compteur par mode (1v1, 2v2, 3v3, 4v4), résumé après chaque match, historique
 et graphique de progression, joueurs déjà croisés, objectif de session, animations et sons,
 personnalisation (designs, couleurs, opacité), multi-écrans et ultra-larges, mode streamer (OBS),
-icône près de l'horloge, trophées et records, carte de session à coller sur Discord, stats avancées
+icône près de l'horloge, trophées et records, carte de session à coller sur Discord, statut Discord, stats avancées
 (engagements, boost, carte des buts), alerte tilt, masquage auto hors du jeu, reprise de session,
 démarrage avec Windows, notification des mises à jour, français / anglais.
 

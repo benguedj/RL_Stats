@@ -46,6 +46,8 @@ FONCTIONNALITÉS
   dans Discord.
 - Stats avancées (Historique > Analyse) : engagements gagnés, boost moyen,
   temps à 0 boost, temps en supersonique, carte des buts.
+- Statut Discord : ton mode, ton score de session et ta série sur ton profil
+  Discord (Paramètres > Fonctions, désactivé par défaut).
 - Alerte tilt : pause conseillée après 3 défaites d'affilée ou 2 h de jeu.
 - Masquage automatique quand le jeu n'est pas au premier plan, reprise de la
   session si l'app est relancée dans les 2 h, démarrage avec Windows.
