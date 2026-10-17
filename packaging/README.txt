@@ -38,6 +38,15 @@ FEATURES
 - Multi-monitor and ultrawide: the overlay follows the game window on any
   screen. You can also pick the screen manually.
 - Streamer mode: a page to add in OBS (browser source).
+- Trophies and personal records (flip reset, aerial goal, hat trick...),
+  announced on the overlay and listed in History > Trophies.
+- Session card: right-click > "Copy session card", then Ctrl+V in Discord.
+- Advanced stats (History > Analysis): kickoffs won, average boost, time at
+  0 boost, supersonic time, goal map.
+- Tilt alert: break suggestion after 3 losses in a row or 2 h of play.
+- Hides itself when the game is not in focus, resumes the session if
+  restarted within 2 h, can start with Windows.
+- Notifies you when a new version is available.
 - English / French (follows the Windows language, can be changed).
 
 

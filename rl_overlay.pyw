@@ -20,8 +20,10 @@ import threading
 import time
 import tkinter as tk
 import urllib.parse
+import urllib.request
 import wave
 import webbrowser
+import winreg
 import winsound
 from collections import Counter
 from ctypes import wintypes
@@ -30,8 +32,10 @@ from tkinter import simpledialog
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(APP_DIR, "_lib"), APP_DIR]  # Pillow embarque dans _lib
 
+import achievements  # noqa: E402
 import designs  # noqa: E402
 import i18n  # noqa: E402
+from discord_rpc import DiscordPresence  # noqa: E402
 from history import History  # noqa: E402
 from i18n import T  # noqa: E402
 from obs_server import OBS_URL, ObsServer  # noqa: E402
@@ -46,6 +50,13 @@ else:
 DATA_FILE = os.path.join(DATA_DIR, "stats.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "matches.json")
 LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
+
+APP_VERSION = "1.1.0"
+REPO = "benguedj/RL_Stats"
+REPO_URL = f"https://github.com/{REPO}"
+# "Application ID" Discord (https://discord.com/developers/applications) : vide = statut Discord indisponible
+DISCORD_CLIENT_ID = ""
+RESUME_HOURS = 2  # une session relancee dans ce delai reprend la ou elle en etait
 
 API_HOST = "127.0.0.1"
 API_PORT = 49123
@@ -129,6 +140,81 @@ def rocket_league_running():
         return "rocketleague.exe" in out.lower()
     except OSError:
         return False
+
+
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
+def launch_command():
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+    return f'"{pythonw}" "{os.path.abspath(__file__)}"'
+
+
+def startup_enabled():
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
+            winreg.QueryValueEx(key, "RL Overlay")
+            return True
+    except OSError:
+        return False
+
+
+def set_startup(enabled):
+    """Demarrage avec Windows (cle Run de l'utilisateur, aucun droit admin necessaire)."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            if enabled:
+                winreg.SetValueEx(key, "RL Overlay", 0, winreg.REG_SZ, launch_command())
+            else:
+                with contextlib.suppress(FileNotFoundError):
+                    winreg.DeleteValue(key, "RL Overlay")
+    except OSError as e:
+        log(f"Demarrage avec Windows impossible : {e}")
+
+
+def copy_image_to_clipboard(img, hwnd):
+    """Copie une image Pillow dans le presse-papiers Windows (format DIB, collable dans Discord)."""
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, "BMP")
+    dib = buf.getvalue()[14:]  # sans l'en-tete de fichier BMP
+    k, u = ctypes.windll.kernel32, ctypes.windll.user32
+    k.GlobalAlloc.restype = ctypes.c_void_p
+    k.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+    k.GlobalLock.restype = ctypes.c_void_p
+    k.GlobalLock.argtypes = k.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    u.OpenClipboard.argtypes = [ctypes.c_void_p]
+    u.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+    handle = k.GlobalAlloc(0x0002, len(dib))  # GMEM_MOVEABLE
+    ctypes.memmove(k.GlobalLock(handle), dib, len(dib))
+    k.GlobalUnlock(handle)
+    if not u.OpenClipboard(hwnd):
+        return False
+    try:
+        u.EmptyClipboard()
+        return bool(u.SetClipboardData(8, handle))  # CF_DIB (le presse-papiers devient proprietaire)
+    finally:
+        u.CloseClipboard()
+
+
+def version_tuple(text):
+    return tuple(int(n) for n in re.findall(r"\d+", text)[:3])
+
+
+def check_update(out_queue):
+    """Interroge les Releases GitHub (thread) ; signale une version plus recente."""
+    try:
+        req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/releases/latest",
+                                     headers={"User-Agent": f"RL-Overlay/{APP_VERSION}",
+                                              "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.load(r)
+        tag = data.get("tag_name", "")
+        if tag and version_tuple(tag) > version_tuple(APP_VERSION):
+            out_queue.put(("update", (tag, data.get("html_url") or f"{REPO_URL}/releases/latest")))
+    except (OSError, ValueError) as e:
+        log(f"Verification des mises a jour impossible : {e}")
 
 
 def ensure_stats_api_enabled():
@@ -534,6 +620,8 @@ class Store:
         "win_color": "#2ee66b", "loss_color": "#ff4d4d", "opacity": 100, "animations": True,
         "sounds": False, "volume": 60, "summary": True, "summary_time": 12, "met_alert": True,
         "obs": False, "hotkeys": True, "tray": True, "taskbar": True,
+        "auto_hide": True, "resume_session": True, "check_updates": True, "tilt_alert": True, "discord": False,
+        "session_saved": {}, "achievements": {},
     }
 
     def __init__(self):
@@ -701,9 +789,15 @@ class MatchTracker:
         self.team_goals = Counter()
         self.team_scores = None  # scores officiels si le jeu les envoie
         self.team_size = 0
+        self.created = time.time()  # debut du match (pour la duree de session)
         self.started = False
         self.announced = False
         self.finished = False
+        self.goal_spots = []  # [x, z] ou mes buts entrent dans la cage
+        self.kick = None  # engagement en cours : {"t": instant du premier contact}
+        self.kickoffs = [0, 0, 0]  # gagnes, perdus, neutres
+        self.last_ball = None  # derniere position connue du ballon
+        self.boost = [0, 0, 0, 0]  # echantillons, somme du boost, a 0 boost, supersonique
 
     @property
     def mode(self):
@@ -725,9 +819,16 @@ class MatchTracker:
                 self.ids[data["PlayerName"]] = data["PrimaryId"]
         elif event == "RoundStarted":
             self.started = True
+            self.kick = {"t": None}  # coup d'envoi : on attend le premier contact
             if self.guid and not self.announced and self.players:
                 self.announced = True
                 self.on_start(self)
+        elif event == "BallHit":
+            loc = (data.get("Ball") or {}).get("Location")
+            if loc:
+                self.last_ball = loc
+            if self.kick is not None and self.kick["t"] is None:
+                self.kick["t"] = time.monotonic()
         elif event == "StatfeedEvent":
             name = (data.get("MainTarget") or {}).get("Name")
             if name:
@@ -741,6 +842,13 @@ class MatchTracker:
             if scorer.get("Name") and data.get("GoalSpeed"):
                 name = scorer["Name"]
                 self.goal_speeds[name] = max(self.goal_speeds.get(name, 0), float(data["GoalSpeed"]))
+            spot = data.get("ImpactLocation") or {}
+            if (scorer.get("Name", "").strip().lower() == self.my_name().strip().lower()
+                    and any(spot.get(a) for a in ("X", "Y", "Z"))):
+                # Vue depuis le terrain : X est inverse selon la cage (bleue en Y < 0, orange en Y > 0)
+                side = 1 if spot.get("Y", 0) >= 0 else -1
+                self.goal_spots.append([round(spot.get("X", 0) * side), round(spot.get("Z", 0))])
+            self.kick = None
         elif event == "MatchEnded":
             self._finish(guid, data.get("WinnerTeamNum"))
         elif event == "MatchDestroyed":
@@ -776,8 +884,14 @@ class MatchTracker:
             self.team_scores = {t.get("TeamNum"): t.get("Score") for t in teams if isinstance(t, dict)}
         if game.get("bReplay"):
             return
+        ball = game.get("Ball") or {}
+        if isinstance(ball.get("Location"), dict):
+            self.last_ball = ball["Location"]
         if game.get("TimeSeconds") is not None and game.get("bHasWinner") is False:
             self.started = self.started or bool(self.guid)
+            if self.guid:
+                self._sample_boost(players)
+        self._check_kickoff()
         target = game.get("Target") or {}
         if game.get("bHasTarget") and target.get("Name"):
             self.team_votes[target.get("TeamNum")] += 1
@@ -787,6 +901,30 @@ class MatchTracker:
             teams = {p.get("TeamNum") for p in players if "Boost" in p}
             if len(teams) == 1:
                 self.team_votes[teams.pop()] += 1
+
+    def _sample_boost(self, players):
+        """Boost du joueur (envoye par le jeu pour notre equipe uniquement), 10 fois par seconde."""
+        me = self.my_name().strip().lower()
+        p = next((p for p in players if p.get("Name", "").strip().lower() == me), None)
+        if p is None or "Boost" not in p:
+            return
+        boost = float(p.get("Boost") or 0)
+        self.boost[0] += 1
+        self.boost[1] += boost
+        self.boost[2] += boost <= 0
+        self.boost[3] += bool(p.get("bSupersonic"))
+
+    def _check_kickoff(self):
+        """2,5 s apres le premier contact : le ballon est-il chez l'adversaire ?
+        L'equipe 0 (bleue) attaque vers les Y positifs."""
+        if not (self.kick and self.kick["t"]) or time.monotonic() - self.kick["t"] < 2.5:
+            return
+        self.kick = None
+        team = self.my_team()
+        if team is None or not self.last_ball:
+            return
+        y = float(self.last_ball.get("Y", 0)) * (1 if int(team) == 0 else -1)
+        self.kickoffs[0 if y > 600 else 1 if y < -600 else 2] += 1
 
     def my_name(self):
         if self.store["player_name"].strip():
@@ -825,6 +963,14 @@ class MatchTracker:
         stats["mvp"] = any(n.strip().lower() == me for n in self.mvp)
         stats["fastest"] = round(max((v for n, v in self.goal_speeds.items() if n.strip().lower() == me),
                                      default=0), 1)
+        stats["feed"] = {k: v for k, v in feed.items() if k}
+        stats["goal_spots"] = self.goal_spots
+        if sum(self.kickoffs):
+            stats["kickoffs"] = list(self.kickoffs)
+        n, total, zero, superso = self.boost
+        if n >= 100:  # au moins ~10 s de donnees
+            stats["boost"] = {"avg": round(total / n, 1), "zero": round(zero * 100 / n, 1),
+                              "superso": round(superso * 100 / n, 1)}
         return stats
 
     def _finish(self, guid, winner, forfeit=False):
@@ -856,7 +1002,8 @@ class MatchTracker:
             score = [goals.get(team, 0), goals.get(1 - int(team), 0)]
         others = self.others()
         self.on_result(won, {
-            "t": time.time(), "guid": guid, "mode": self.mode, "won": won, "forfeit": forfeit, "score": score,
+            "t": time.time(), "start": round(self.created), "guid": guid, "mode": self.mode, "won": won,
+            "forfeit": forfeit, "score": score,
             "me": self.my_stats(),
             "with": [[pid, name] for pid, name, t in others if team is not None and t == team],
             "against": [[pid, name] for pid, name, t in others if team is None or t != team],
@@ -1030,6 +1177,16 @@ class Overlay:
         self.settings_window = None
         self.history_window = None
         self.hotkeys = None
+        self.auto_hidden = False  # masque car le jeu n'est pas au premier plan
+        self.grace_until = time.monotonic() + 8  # visible quelques secondes au lancement
+        self.banner_queue = []
+        self.session_start = None  # heure du premier match de la session
+        self.break_hours = 0  # alertes "pause" deja affichees
+        self.update_info = None  # (version, url) si une mise a jour existe
+        self.restore_session()
+        if not self.store["achievements"] and self.history.matches:
+            # Premiere version avec trophees : ceux deja merites sont acquis sans annonce
+            self.store["achievements"] = {a: time.time() for a in achievements.unlocked(self.history.matches)}
 
         self.q = queue.Queue()
         self.tracker = MatchTracker(self.store, self.add_result, self.on_match_start)
@@ -1069,9 +1226,17 @@ class Overlay:
             self.obs.start()
         if self.store["hotkeys"]:
             self.start_hotkeys()
+        self.discord = DiscordPresence(DISCORD_CLIENT_ID, log)
+        if DISCORD_CLIENT_ID:
+            self.discord.start()
+            self.update_presence()
+        if self.store["check_updates"]:
+            threading.Thread(target=check_update, args=(self.q,), daemon=True).start()
         self.check_config()
         self.root.after(100, self.poll)
+        self.root.after(300, self.check_focus)
         self.root.after(2000, self.keep_on_top)
+        self.root.after(60000, self.check_play_time)
 
     def _accept_wakeups(self, lock):
         # Relancer l'application alors qu'elle tourne deja = reafficher l'overlay
@@ -1122,7 +1287,14 @@ class Overlay:
         elif key == "taskbar":
             self.shell.set_taskbar(value)
             return
-        elif key in ("volume", "sounds", "summary", "summary_time", "met_alert"):
+        elif key == "auto_hide":
+            self.check_focus(reschedule=False)
+            return
+        elif key == "discord":
+            self.update_presence()
+            return
+        elif key in ("volume", "sounds", "summary", "summary_time", "met_alert", "tilt_alert", "resume_session",
+                     "check_updates"):
             return  # pris en compte au prochain match, rien a redessiner
         self.draw()
 
@@ -1145,6 +1317,12 @@ class Overlay:
 
     def monitors(self):
         return self.screens.monitors()
+
+    # Pour la fenetre Parametres
+    version = APP_VERSION
+    discord_available = bool(DISCORD_CLIENT_ID)
+    startup_enabled = staticmethod(startup_enabled)
+    set_startup = staticmethod(set_startup)
 
     def open_player(self, pid, name):
         url = tracker_url({"PrimaryId": pid, "Name": name})
@@ -1169,10 +1347,11 @@ class Overlay:
         """Zone ou s'affiche le jeu : sa fenetre (n'importe quel ecran, ultra-large, fenetre),
         sinon l'ecran choisi dans les parametres, sinon l'ecran principal."""
         monitors = self.screens.monitors()
+        game = self.screens.game_rect()  # toujours chercher le jeu (sert aussi au masquage auto)
         choice = self.store["monitor"]
         if choice and choice <= len(monitors):
             return monitors[choice - 1]
-        return self.screens.game_rect() or monitors[0]
+        return game or monitors[0]
 
     def scale(self):
         # Le HUD de RL suit la hauteur de l'image du jeu ; reference : 1440p
@@ -1264,7 +1443,7 @@ class Overlay:
     def present(self):
         """Affiche le dernier rendu, avec l'animation de fin de match par-dessus s'il y en a une."""
         img, ax, ay, buttons = self._base
-        if self.hidden:
+        if self.hidden or self.auto_hidden:
             img, ax, ay, buttons = empty_image(), 0, 0, {}
         elif self.anim:
             img, (px, py) = self.anim.frame(img)
@@ -1316,13 +1495,128 @@ class Overlay:
     def clear_banner(self):
         self.banner = None
         self._banner_job = None
-        self.draw()
+        if self.banner_queue:
+            self.show_banner(*self.banner_queue.pop(0))
+        else:
+            self.draw()
+
+    def queue_banner(self, text, color, side=None, seconds=5):
+        """Bandeau affiche apres ceux en cours (trophees, records, pause...)."""
+        if self.banner:
+            self.banner_queue.append((text, color, side, seconds))
+        else:
+            self.show_banner(text, color, side, seconds)
 
     def toggle_hidden(self):
         self.hidden = not self.hidden
         if self.hidden:
             self.card.hide()
+        else:
+            self.grace_until = time.monotonic() + 5  # reafficher meme si le jeu n'est pas au premier plan
+            self.auto_hidden = False
         self.draw()
+
+    def game_in_focus(self):
+        """Vrai si le jeu ou une fenetre de l'app (menu, parametres...) est au premier plan,
+        None quand on ne peut pas trancher (l'overlay lui-meme vient d'etre clique, transition...)."""
+        u = ctypes.windll.user32
+        u.GetForegroundWindow.restype = ctypes.c_void_p
+        u.GetAncestor.restype = ctypes.c_void_p
+        u.GetAncestor.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        fg = u.GetForegroundWindow()
+        if not fg or fg in (self.layer.hwnd, self.card.layer.hwnd, self.shell.hwnd):
+            return None
+        pid = wintypes.DWORD()
+        u.GetWindowThreadProcessId(ctypes.c_void_p(fg), ctypes.byref(pid))
+        if pid.value == os.getpid():
+            return True
+        game = self.screens.game_hwnd
+        return bool(game) and (fg == game or u.GetAncestor(fg, 2) == game)  # GA_ROOT
+
+    def check_focus(self, reschedule=True):
+        focus = self.game_in_focus()
+        if not self.store["auto_hide"] or self._dragging or time.monotonic() < self.grace_until:
+            hide = False
+        elif focus is None:
+            hide = self.auto_hidden  # on ne peut pas trancher : rien ne change
+        else:
+            hide = not focus
+        if hide != self.auto_hidden:
+            self.auto_hidden = hide
+            if hide:
+                self.card.hide()
+            self.present()
+        if reschedule:
+            self.root.after(300, self.check_focus)
+
+    # --- Session ------------------------------------------------------------
+
+    def restore_session(self):
+        saved = self.store["session_saved"]
+        if (self.store["resume_session"] and saved.get("modes")
+                and time.time() - saved.get("last", 0) < RESUME_HOURS * 3600):
+            self.session = {m: list(v) for m, v in saved["modes"].items()}
+            self.streak = saved.get("streak", 0)
+            self.current_mode = saved.get("mode")
+            self.session_start = saved.get("start")
+            log("Session reprise")
+
+    def save_session(self):
+        self.store["session_saved"] = {"modes": self.session, "streak": self.streak, "mode": self.current_mode,
+                                       "start": self.session_start, "last": time.time()}
+
+    def session_matches(self):
+        return [m for m in self.history.matches if self.session_start and m["t"] > self.session_start]
+
+    def check_play_time(self):
+        """Alerte pause toutes les 2 h de jeu (si l'alerte tilt est activee)."""
+        if self.session_start and self.store["tilt_alert"]:
+            hours = int((time.time() - self.session_start) // 3600)
+            if hours >= 2 and hours > self.break_hours:
+                self.break_hours = hours
+                self.queue_banner(T("tilt_time", h=hours), designs.AMBER, None, 8)
+        self.root.after(60000, self.check_play_time)
+
+    def update_presence(self):
+        """Statut Discord : mode, score de la session, serie."""
+        if not DISCORD_CLIENT_ID:
+            return
+        w, l = self.counts()
+        mode = f"{self.current_mode} · " if self.current_mode and self.store["counter"] == "mode" else ""
+        if self.streak >= 2:
+            state = T("dc_streak", n=self.streak)
+        elif w + l:
+            state = T("dc_games", n=sum(sum(v) for v in self.session.values()))
+        else:
+            state = T("dc_waiting")
+        activity = {
+            "details": T("dc_details", mode=mode, w=w, l=l, p=round(w * 100 / (w + l)) if w + l else 0),
+            "state": state,
+            "assets": {"large_image": "logo", "large_text": f"RL Overlay {APP_VERSION}"},
+            "buttons": [{"label": T("dc_button"), "url": REPO_URL}],
+        }
+        if self.session_start:
+            activity["timestamps"] = {"start": int(self.session_start)}
+        self.discord.update(activity, self.store["discord"] and self.connected)
+
+    def share_card(self):
+        """Copie une image de la session dans le presse-papiers."""
+        matches = self.session_matches()
+        me = [m.get("me") or {} for m in matches if not m.get("forfeit")]
+        w = sum(v[0] for v in self.session.values())
+        l = sum(v[1] for v in self.session.values())
+        minutes = round((time.time() - self.session_start) / 60) if self.session_start else 0
+        fmt = "%d/%m/%Y" if i18n.lang() == "fr" else "%Y-%m-%d"
+        info = {"w": w, "l": l, "modes": self.session,
+                "best_streak": History.summary(matches)["best_streak"] if matches else max(self.streak, 0),
+                "mvp": sum(1 for x in me if x.get("mvp")), "goals": sum(x.get("goals", 0) for x in me),
+                "assists": sum(x.get("assists", 0) for x in me), "saves": sum(x.get("saves", 0) for x in me),
+                "fastest": max((x.get("fastest", 0) for x in me), default=0), "minutes": minutes,
+                "date": time.strftime(fmt)}
+        img = designs.render_session_card(info, T)
+        if copy_image_to_clipboard(img, self.layer.hwnd):
+            self.show_banner(T("card_copied"), designs.GREEN, None, 3)
+        return img
 
     # --- Resume de match ----------------------------------------------------
 
@@ -1346,11 +1640,16 @@ class Overlay:
         if getattr(self, "menu", None):
             self.menu.destroy()
         m = tk.Menu(self.root, tearoff=0)
+        if self.update_info:
+            version, url = self.update_info
+            m.add_command(label=T("m_update", v=version), command=lambda: webbrowser.open(url))
+            m.add_separator()
         self.players_menu = tk.Menu(m, tearoff=0)
         m.add_cascade(label=T("m_players"), menu=self.players_menu)
         m.add_command(label=T("m_history"), command=self.open_history)
         m.add_command(label=T("m_settings"), command=self.open_settings)
         m.add_command(label=T("m_last_summary"), command=lambda: self.show_summary())
+        m.add_command(label=T("m_share"), command=self.share_card)
         m.add_separator()
         m.add_command(label=T("m_reset"), command=self.reset_session)
         m.add_command(label=T("m_win_plus"), command=lambda: self.adjust(1, 0))
@@ -1415,11 +1714,19 @@ class Overlay:
                         if payload:
                             self.notice = None
                         self.refresh()
+                        self.update_presence()
+                elif kind == "update":
+                    self.update_info = payload
+                    log(f"Mise a jour disponible : {payload[0]}")
+                    self._build_menu()
+                    self.queue_banner(T("update_banner", v=payload[0]), designs.SKY, None, 8)
                 elif kind == "hotkey":
                     self.toggle_hidden() if payload == "toggle" else self.reset_session()
                 elif kind == "wake":
                     if self.hidden:
                         self.toggle_hidden()
+                    self.grace_until = time.monotonic() + 8
+                    self.check_focus(reschedule=False)
                 elif kind == "shell":
                     self.toggle_hidden() if payload == "toggle" else self.quit()
                     if payload == "quit":
@@ -1511,16 +1818,41 @@ class Overlay:
             self.streak = self.streak + 1 if self.streak > 0 else 1
         else:
             self.streak = self.streak - 1 if self.streak < 0 else -1
-        self.store.save()
+        if not self.session_start:
+            self.session_start = info.get("start") or info["t"]
+        self.save_session()
+        records_before = achievements.records(self.history.matches) if len(self.history.matches) >= 5 else {}
         self.history.add(info)
         self.last_summary = info
         self.celebrate(won)
         if self.store["summary"]:
             self.root.after(1500, lambda: self.show_summary(info))
+
+        # Bandeaux qui suivent celui du resultat
         goal = self.store["goal"]
         if won and goal and self.total_wins() == goal:
-            self.root.after(5200, lambda: (self.show_banner(T("goal_reached"), designs.GOLD, "w"),
-                                           self.play_animation("w") if self.store["animations"] else None))
+            self.queue_banner(T("goal_reached"), designs.GOLD, "w")
+        # Au plus 1 record et 2 trophees annonces par match (le reste est dans l'onglet Trophees)
+        lang = i18n.lang()
+        records_after = achievements.records(self.history.matches)
+        broken = achievements.broken_records(records_before, records_after)
+        if broken:
+            entry = next(r for r in achievements.RECORDS if r[0] == broken[0])
+            self.queue_banner(T("record_banner", name=achievements.label(entry, lang).upper(),
+                                v=entry[3].format(records_after[broken[0]][0])), designs.GOLD, None, 4)
+        unlocked = achievements.unlocked(self.history.matches)
+        new = [e for e in achievements.ACHIEVEMENTS if e[0] in unlocked and e[0] not in self.store["achievements"]]
+        for entry in new:
+            self.store["achievements"][entry[0]] = time.time()
+            log(f"Trophee : {entry[0]}")
+        for entry in new[:2]:
+            self.queue_banner(T("trophy_banner", name=achievements.label(entry, lang).upper()), designs.GOLD, "w", 5)
+        if len(new) > 2:
+            self.queue_banner(T("trophy_more", n=len(new) - 2), designs.GOLD, None, 4)
+        self.store.save()
+        if not won and self.store["tilt_alert"] and self.streak in (-3, -5, -7):
+            self.queue_banner(T("tilt_losses", n=-self.streak), designs.AMBER, None, 7)
+        self.update_presence()
         if self.history_window:
             self.history_window.refresh()
 
@@ -1549,11 +1881,17 @@ class Overlay:
             self.streak = self.streak - 1 if self.streak < 0 else -1
         else:
             self.streak = 0
+        self.save_session()
+        self.update_presence()
         self.refresh()
 
     def reset_session(self):
         self.session = {}
         self.streak = 0
+        self.session_start = None
+        self.break_hours = 0
+        self.save_session()
+        self.update_presence()
         self.refresh()
 
     def edit_name(self):

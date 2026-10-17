@@ -647,6 +647,76 @@ def render_summary(info, k, T):
     return finish(img, w_px, h_px)
 
 
+# --------------------------------------------------------------------------
+# Carte de session a partager (copiee dans le presse-papiers)
+# --------------------------------------------------------------------------
+
+def render_session_card(info, T):
+    """info = {"w", "l", "modes": {mode: [V, D]}, "best_streak", "mvp", "goals", "assists", "saves",
+    "fastest", "minutes", "date"}. Image 760 x 400 sur fond opaque (pour Discord)."""
+    k = 1.0
+    s = k * SS
+    w_px, h_px = 760, 400
+    W, H = w_px * SS, h_px * SS
+    img = Image.new("RGBA", (W, H), (7, 12, 24, 255))
+    d = ImageDraw.Draw(img)
+    for y in range(0, H, SS * 2):  # leger degrade
+        t = y / H
+        d.rectangle([0, y, W, y + SS * 2], fill=(int(9 + 14 * t), int(15 + 18 * t), int(30 + 22 * t), 255))
+    pad = 34 * s
+    # bandeau victoires / defaites en haut
+    w, l = info["w"], info["l"]
+    total = w + l
+    split = W * (w / total if total else 0.5)
+    d.rectangle([0, 0, split, 8 * s], fill=GREEN)
+    d.rectangle([split, 0, W, 8 * s], fill=RED)
+
+    t = text_img([("RL OVERLAY", font(round(16 * s)), MUTED, 0), ("·  " + T("card_session"), font(round(16 * s), SEMI),
+                                                                   MUTED, 0)], shear=0)
+    img.alpha_composite(t, (round(pad), round(30 * s)))
+    t = text_img([(info["date"], font(round(16 * s), SEMI), MUTED, 0)], shear=0)
+    img.alpha_composite(t, (round(W - pad - t.width), round(30 * s)))
+
+    # Grand score
+    pct = round(w * 100 / total) if total else 0
+    big = text_img([(str(w), font(round(96 * s)), GREEN, 0), ("–", font(round(70 * s)), MUTED, round(14 * s)),
+                    (str(l), font(round(96 * s)), RED, 0)])
+    img.alpha_composite(big, (round(pad - 10 * s), round(62 * s)))
+    t = text_img([(f"{pct}%", font(round(64 * s)), FG, 0)])
+    img.alpha_composite(t, (round(W - pad - t.width), round(76 * s)))
+    t = text_img([(T("card_winrate"), font(round(14 * s), SEMI), MUTED, 0)], shear=0)
+    img.alpha_composite(t, (round(W - pad - t.width), round(150 * s)))
+
+    # Modes
+    x = pad
+    y = 196 * s
+    for mode, (mw, ml) in sorted(info["modes"].items()):
+        if mode == "?" or mw + ml == 0:
+            continue
+        t = text_img([(mode.upper(), font(round(18 * s)), FG, 0), (f"{mw}–{ml}", font(round(18 * s), SEMI), MUTED, 0)])
+        bw = t.width + 24 * s
+        d.rounded_rectangle([x, y, x + bw, y + 36 * s], radius=6 * s, fill=(20, 31, 54, 255), outline=EDGE,
+                            width=max(1, round(s)))
+        img.alpha_composite(t, (round(x + 12 * s), round(y + 18 * s - t.height / 2)))
+        x += bw + 10 * s
+
+    # Statistiques
+    cells = [(T("card_streak"), str(info["best_streak"])), (T("sum_mvp"), str(info["mvp"])),
+             (T("sum_goals"), str(info["goals"])), (T("sum_assists"), str(info["assists"])),
+             (T("sum_saves"), str(info["saves"])),
+             (T("card_fastest"), f"{round(info['fastest'])}" if info["fastest"] else "–")]
+    cw = (W - 2 * pad) / len(cells)
+    y = 262 * s
+    d.line([(pad, y - 10 * s), (W - pad, y - 10 * s)], fill=EDGE, width=max(1, round(s)))
+    for i, (lab, value) in enumerate(cells):
+        cx = pad + cw * i + cw / 2
+        paste_center(img, text_img([(value, font(round(40 * s)), FG, 0)]), (cx, y + 34 * s))
+        paste_center(img, text_img([(lab, font(round(12 * s), SEMI), MUTED, 0)], shear=0), (cx, y + 72 * s))
+    foot = text_img([(T("card_footer", min=info["minutes"]), font(round(12 * s), SEMI), MUTED, 0)], shear=0)
+    img.alpha_composite(foot, (round((W - foot.width) / 2), round(H - 30 * s)))
+    return img.resize((w_px, h_px), Image.LANCZOS)
+
+
 # Deux reglages independants : le design (style) et la forme (libelles : i18n style_* / shape_*)
 STYLES = ("tableau", "minimal")
 SHAPES = ("arrondi", "droit")

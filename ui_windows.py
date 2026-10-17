@@ -4,6 +4,7 @@ import datetime
 import tkinter as tk
 from tkinter import colorchooser, filedialog, ttk
 
+import achievements
 from history import MODES, History
 from i18n import T, lang
 from obs_server import OBS_URL
@@ -229,6 +230,14 @@ class SettingsWindow:
         self.vars["summary_time"].trace_add("write", lambda *a: self._safe_int("summary_time", 4, 60))
         _check(f, T("s_met"), self.var("met_alert", tk.BooleanVar),
                lambda: self.changed("met_alert")).pack(fill="x", padx=12, pady=6)
+        _check(f, T("s_tilt"), self.var("tilt_alert", tk.BooleanVar),
+               lambda: self.changed("tilt_alert")).pack(fill="x", padx=12, pady=6)
+        discord = _check(f, T("s_discord"), self.var("discord", tk.BooleanVar), lambda: self.changed("discord"))
+        discord.pack(fill="x", padx=12, pady=(6, 2 if not self.app.discord_available else 6))
+        if not self.app.discord_available:
+            discord.configure(state="disabled", disabledforeground=MUTED)
+            tk.Label(f, text=T("s_discord_na"), bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(
+                fill="x", padx=30, pady=(0, 6))
 
         _check(f, T("s_obs"), self.var("obs", tk.BooleanVar),
                lambda: self.changed("obs")).pack(fill="x", padx=12, pady=(10, 2))
@@ -254,6 +263,20 @@ class SettingsWindow:
                lambda: self.changed("hotkeys")).pack(fill="x", padx=12, pady=(10, 2))
         tk.Label(f, text=T("s_hotkeys_desc"), bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(
             fill="x", padx=30, pady=(0, 8))
+
+        # --- Systeme
+        f = _section(body, T("s_system"))
+        _check(f, T("s_auto_hide"), self.var("auto_hide", tk.BooleanVar),
+               lambda: self.changed("auto_hide")).pack(fill="x", padx=12, pady=6)
+        startup = tk.BooleanVar(value=self.app.startup_enabled())
+        _check(f, T("s_startup"), startup,
+               lambda: self.app.set_startup(startup.get())).pack(fill="x", padx=12, pady=6)
+        _check(f, T("s_resume"), self.var("resume_session", tk.BooleanVar),
+               lambda: self.changed("resume_session")).pack(fill="x", padx=12, pady=6)
+        _check(f, T("s_updates"), self.var("check_updates", tk.BooleanVar),
+               lambda: self.changed("check_updates")).pack(fill="x", padx=12, pady=6)
+        tk.Label(f, text=T("s_version", v=self.app.version), bg=PANEL, fg=MUTED, font=("Segoe UI", 9),
+                 anchor="w").pack(fill="x", padx=12, pady=(0, 8))
 
         _button(body, T("s_close"), self.close).pack(pady=16)
 
@@ -318,8 +341,10 @@ class HistoryWindow:
         top = tk.Frame(self.win, bg=BG)
         top.pack(fill="x", padx=16, pady=(14, 6))
         self._segmented(top, [("overview", T("h_overview")), ("matches", T("h_matches_tab")),
-                              ("players", T("h_players"))], self.tab, self.set_tab).pack(side="left")
+                              ("players", T("h_players")), ("trophies", T("h_trophies")),
+                              ("analysis", T("h_analysis"))], self.tab, self.set_tab).pack(side="left")
         _button(top, T("h_export"), self.export, bg=PANEL).pack(side="right")
+        _button(top, T("h_share"), self.app.share_card, bg=PANEL).pack(side="right", padx=(0, 6))
 
         filters = tk.Frame(self.win, bg=BG)
         filters.pack(fill="x", padx=16, pady=(0, 8))
@@ -348,7 +373,8 @@ class HistoryWindow:
         for child in self.content.winfo_children():
             child.destroy()
         matches = self.history.filter(self.period, self.mode)
-        {"overview": self.show_overview, "matches": self.show_matches, "players": self.show_players}[self.tab](matches)
+        {"overview": self.show_overview, "matches": self.show_matches, "players": self.show_players,
+         "trophies": self.show_trophies, "analysis": self.show_analysis}[self.tab](matches)
 
     # --- Progression --------------------------------------------------------
 
@@ -521,6 +547,118 @@ class HistoryWindow:
         fill()
         tree.bind("<Double-1>", lambda e: tree.focus() and self.app.open_player(tree.focus(),
                                                                                  players[tree.focus()]["name"]))
+
+    # --- Trophees et records ------------------------------------------------
+
+    def show_trophies(self, _matches):
+        matches = self.history.matches  # toujours sur tout l'historique
+        got = self.app.store["achievements"]
+        t = achievements.totals(matches)
+        fr = lang() == "fr"
+        tk.Label(self.content, text=T("h_unlocked", n=len(got), t=len(achievements.ACHIEVEMENTS)), bg=BG, fg=MUTED,
+                 font=BODY_FONT, anchor="w").pack(fill="x", pady=(0, 6))
+        body = tk.Frame(self.content, bg=BG)
+        body.pack(fill="both", expand=True)
+        grid = tk.Frame(body, bg=BG)
+        grid.pack(side="left", fill="both", expand=True)
+        gold = "#facc15"
+        cols = 3
+        for i, entry in enumerate(achievements.ACHIEVEMENTS):
+            done = entry[0] in got
+            value, goal = achievements.progress(entry, t)
+            tile = tk.Frame(grid, bg=PANEL, highlightbackground=gold if done else EDGE, highlightthickness=1)
+            tile.grid(row=i // cols, column=i % cols, sticky="nsew", padx=(0, 5), pady=(0, 5))
+            badge = tk.Canvas(tile, width=26, height=26, bg=PANEL, highlightthickness=0)
+            badge.create_oval(3, 3, 23, 23, fill=gold if done else BG, outline=gold if done else EDGE, width=2)
+            badge.create_text(13, 13, text="★" if done else "", fill=BG, font=("Segoe UI", 9, "bold"))
+            badge.pack(side="left", padx=(8, 6), pady=6)
+            text = tk.Frame(tile, bg=PANEL)
+            text.pack(side="left", fill="x", pady=4)
+            tk.Label(text, text=achievements.label(entry, lang()), bg=PANEL, fg=FG if done else MUTED,
+                     font=("Segoe UI", 9, "bold" if done else "normal"), anchor="w").pack(fill="x")
+            if done:
+                sub = datetime.datetime.fromtimestamp(got[entry[0]]).strftime("%d/%m/%Y" if fr else "%Y-%m-%d")
+            else:
+                sub = f"{min(round(value), goal)} / {goal}"
+            tk.Label(text, text=sub, bg=PANEL, fg=MUTED, font=("Segoe UI", 8), anchor="w").pack(fill="x")
+        for c in range(cols):
+            grid.columnconfigure(c, weight=1)
+
+        side = tk.Frame(body, bg=PANEL, highlightbackground=EDGE, highlightthickness=1, width=230)
+        side.pack(side="right", fill="y", padx=(8, 0))
+        side.pack_propagate(False)
+        tk.Label(side, text=T("h_records"), bg=PANEL, fg=FG, font=TITLE_FONT, anchor="w").pack(fill="x", padx=12,
+                                                                                            pady=(10, 6))
+        recs = achievements.records(matches)
+        for rid, _, _, fmt in achievements.RECORDS:
+            entry = next(r for r in achievements.RECORDS if r[0] == rid)
+            row = tk.Frame(side, bg=PANEL)
+            row.pack(fill="x", padx=12, pady=4)
+            tk.Label(row, text=achievements.label(entry, lang()), bg=PANEL, fg=MUTED, font=("Segoe UI", 9),
+                     anchor="w").pack(fill="x")
+            value = fmt.format(recs[rid][0]) if rid in recs else "–"
+            tk.Label(row, text=value, bg=PANEL, fg=FG, font=("Bahnschrift SemiBold", 16), anchor="w").pack(fill="x")
+
+    # --- Analyse (engagements, boost, carte des buts) -----------------------
+
+    def show_analysis(self, matches):
+        mes = [m.get("me") or {} for m in matches]
+        kick = [sum(me.get("kickoffs", [0, 0, 0])[i] for me in mes) for i in range(3)]
+        boosts = [me["boost"] for me in mes if me.get("boost")]
+        spots = [s for me in mes for s in me.get("goal_spots", [])]
+        if not (sum(kick) or boosts or spots):
+            tk.Label(self.content, text=T("h_no_adv"), bg=BG, fg=MUTED, font=BODY_FONT).pack(expand=True)
+            return
+        tiles = tk.Frame(self.content, bg=BG)
+        tiles.pack(fill="x")
+
+        def avg(key):
+            return sum(b[key] for b in boosts) / len(boosts) if boosts else None
+
+        decided = kick[0] + kick[1]
+        for title, value, sub in (
+                (T("h_kickoffs"), f"{round(kick[0] * 100 / decided)} %" if decided else "–",
+                 T("h_kickoffs_sub", w=kick[0], l=kick[1], n=kick[2])),
+                (T("h_boost"), f"{avg('avg'):.0f}" if boosts else "–", ""),
+                (T("h_zero"), f"{avg('zero'):.0f} %" if boosts else "–", ""),
+                (T("h_superso"), f"{avg('superso'):.0f} %" if boosts else "–", ""),
+        ):
+            tile = tk.Frame(tiles, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
+            tile.pack(side="left", fill="both", expand=True, padx=(0, 6))
+            tk.Label(tile, text=title, bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=10,
+                                                                                                  pady=(8, 0))
+            tk.Label(tile, text=value, bg=PANEL, fg=FG, font=NUM_FONT, anchor="w").pack(fill="x", padx=10)
+            tk.Label(tile, text=sub, bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=10,
+                                                                                                pady=(0, 8))
+        tk.Label(self.content, text=T("h_goal_map"), bg=BG, fg=FG, font=TITLE_FONT, anchor="w").pack(fill="x",
+                                                                                                    pady=(14, 0))
+        tk.Label(self.content, text=T("h_goal_map_sub", n=len(spots)), bg=BG, fg=MUTED, font=("Segoe UI", 9),
+                 anchor="w").pack(fill="x", pady=(0, 4))
+        canvas = tk.Canvas(self.content, bg=PANEL, highlightthickness=1, highlightbackground=EDGE)
+        canvas.pack(fill="both", expand=True)
+        canvas.bind("<Configure>", lambda e: self.draw_goal_map(canvas, spots))
+
+    def draw_goal_map(self, c, spots):
+        """Cage de face (largeur 1786, hauteur 642 unites du jeu) et points d'entree des buts."""
+        c.delete("all")
+        W, H = c.winfo_width(), c.winfo_height()
+        half_w, height = 893, 642
+        scale = min((W - 60) / (2 * half_w), (H - 40) / height)
+        gw, gh = 2 * half_w * scale, height * scale
+        x0, y1 = (W - gw) / 2, (H + gh) / 2
+        y0 = y1 - gh
+        for i in range(1, 8):  # filet
+            c.create_line(x0 + gw * i / 8, y0, x0 + gw * i / 8, y1, fill=GRID)
+        for i in range(1, 4):
+            c.create_line(x0, y0 + gh * i / 4, x0 + gw, y0 + gh * i / 4, fill=GRID)
+        c.create_line(x0, y1, x0, y0, x0 + gw, y0, x0 + gw, y1, fill=FG, width=4)  # poteaux et barre
+        c.create_line(x0 - 20, y1, x0 + gw + 20, y1, fill=EDGE, width=2)  # ligne de but
+        color = self.app.store["win_color"]
+        r = max(4, scale * 28)
+        for x, z in spots:
+            px = x0 + (min(max(x, -half_w), half_w) + half_w) * scale
+            py = y1 - min(max(z, 0), height) * scale
+            c.create_oval(px - r, py - r, px + r, py + r, fill=color, outline=PANEL, width=2)
 
     def export(self):
         path = filedialog.asksaveasfilename(parent=self.win, defaultextension=".csv", initialfile="rl_overlay.csv",
