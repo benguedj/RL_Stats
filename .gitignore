@@ -1,0 +1,30 @@
+# Donnees personnelles (pseudo, joueurs croises, journal)
+stats.json
+stats.json.tmp
+matches.json
+matches.json.*
+overlay.log
+overlay.log.old
+sounds/
+
+# Raccourcis Windows (chemins locaux)
+*.lnk
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Pillow embarque pour lancer le .pyw sans pip (installer requirements.txt a la place)
+_lib/
+
+# Build PyInstaller (l'exe est publie dans les Releases GitHub)
+build/
+dist/
+
+# Editeurs / systeme
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

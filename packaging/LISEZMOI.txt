@@ -1,0 +1,73 @@
+RL Overlay - compteur automatique de victoires / défaites pour Rocket League
+===========================================================================
+
+L'overlay affiche tes victoires, tes défaites et ton ratio de la session,
+au-dessus de la jauge de boost. Il se met à jour tout seul à la fin de chaque
+match en ligne.
+
+Il utilise la "Stats API" officielle de Rocket League (prévue par Psyonix pour
+les overlays) : rien n'est injecté dans le jeu, aucun risque avec l'anti-cheat.
+
+
+INSTALLATION
+------------
+1. Mets "RL Overlay.exe" où tu veux (Bureau, Documents...).
+2. Double-clique dessus.
+   Au premier lancement, Windows peut afficher "Windows a protégé votre
+   ordinateur" : clique sur "Informations complémentaires" puis
+   "Exécuter quand même" (le programme n'est pas signé, c'est normal).
+3. Lance Rocket League (ou relance-le s'il était déjà ouvert : le jeu ne lit
+   sa configuration qu'au démarrage). L'overlay active la Stats API tout seul.
+4. Dans les options vidéo du jeu, mets l'affichage en "Fenêtré sans bordure"
+   (en plein écran, l'overlay ne peut pas passer devant le jeu).
+
+Quand le bandeau "EN ATTENTE DU JEU" disparaît, l'overlay est connecté.
+
+
+FONCTIONNALITÉS
+---------------
+- Compteur par mode : 1v1, 2v2, 3v3 et 4v4 sont comptés séparément.
+  L'overlay affiche le mode en cours (ou tous les modes, au choix).
+- Résumé après chaque match : score, buts, passes décisives, arrêts, tirs,
+  démolitions, précision, but le plus rapide et badge MVP.
+- Historique et progression : tous tes matchs sont enregistrés. Graphique du
+  taux de victoire par jour, meilleure série, MVP, moyennes, export CSV.
+- Joueurs déjà croisés : l'overlay te prévient quand tu retombes sur un joueur
+  déjà rencontré, avec ton bilan face à lui ou avec lui.
+- Objectif de session : par exemple 10 victoires, avec la progression affichée.
+- Animations et sons de victoire / défaite (désactivables).
+- Personnalisation : design, forme, taille, couleurs, opacité.
+- Multi-écrans et écrans ultra-larges : l'overlay suit la fenêtre du jeu,
+  sur n'importe quel écran. On peut aussi choisir l'écran à la main.
+- Mode streamer : une page à ajouter dans OBS (source navigateur).
+- Français / anglais (selon la langue de Windows, modifiable).
+
+
+UTILISATION
+-----------
+- Clic droit sur l'overlay : historique, paramètres, design, forme, taille,
+  correction du score, réinitialisation de la session, quitter.
+- Survol à la souris : boutons +W / -W / +L / -L / X.
+- Glisser-déposer pour le déplacer (la position est mémorisée).
+- Icône près de l'horloge et bouton dans la barre des tâches : un clic
+  masque / affiche l'overlay ; clic droit sur l'icône près de l'horloge :
+  le menu complet. Windows 11 range les nouvelles icônes derrière la flèche
+  "^" : pour la garder visible, fais-la glisser à côté de l'horloge.
+- Ctrl+Maj+H : masquer / afficher l'overlay.
+  Ctrl+Maj+R : réinitialiser la session.
+  Relancer RL Overlay.exe réaffiche aussi l'overlay s'il était masqué.
+- Clic droit > "Joueurs de la partie (Tracker)" : un clic sur un nom ouvre sa
+  page Tracker Network (rang, MMR) dans le navigateur.
+- Si les résultats sont inversés, clic droit > "Définir mon pseudo..." et
+  entre ton pseudo exact en jeu.
+
+MODE STREAMER (OBS)
+-------------------
+Paramètres > "Mode streamer", puis dans OBS : Sources > + > Navigateur,
+adresse http://127.0.0.1:49124/ , largeur 600, hauteur 260.
+
+Seuls les matchs en ligne sont comptés. Quitter un match en cours compte
+comme une défaite. Le jeu ne fournit ni rang ni MMR : l'overlay ne peut pas
+les afficher.
+
+Les réglages, l'historique et le journal sont dans %APPDATA%\RL Overlay
