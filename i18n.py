@@ -42,7 +42,7 @@ TEXTS = {
     "dc_streak": ("Série de {n} victoires", "{n} win streak"),
     "dc_games": ("{n} matchs cette session", "{n} games this session"),
     "dc_waiting": ("Session en cours", "Session in progress"),
-    "dc_button": ("Obtenir RL Overlay", "Get RL Overlay"),
+    "dc_button": ("Obtenir RL Stats", "Get RL Stats"),
 
     # Resume de match
     "sum_win": ("VICTOIRE", "VICTORY"),
@@ -97,7 +97,7 @@ TEXTS = {
     "name_detected": ("Détecté automatiquement : {name}", "Detected automatically: {name}"),
 
     # Parametres
-    "s_title": ("RL Overlay - Paramètres", "RL Overlay - Settings"),
+    "s_title": ("RL Stats - Paramètres", "RL Stats - Settings"),
     "s_general": ("Général", "General"),
     "s_language": ("Langue", "Language"),
     "s_lang_auto": ("Automatique (Windows)", "Automatic (Windows)"),
@@ -131,7 +131,7 @@ TEXTS = {
     "s_taskbar": ("Bouton dans la barre des tâches", "Taskbar button"),
     "s_shell_hint": ("Clic : afficher / masquer l'overlay. Clic droit sur l'icône : menu.",
                      "Click: show / hide the overlay. Right-click the icon: menu."),
-    "tray_tip": ("RL Overlay – {w}V {l}D", "RL Overlay – {w}W {l}L"),
+    "tray_tip": ("RL Stats – {w}V {l}D", "RL Stats – {w}W {l}L"),
     "s_hotkeys": ("Raccourcis clavier", "Keyboard shortcuts"),
     "s_hotkeys_desc": ("Ctrl+Maj+H : masquer / afficher    Ctrl+Maj+R : réinitialiser la session",
                        "Ctrl+Shift+H: hide / show    Ctrl+Shift+R: reset session"),
@@ -152,7 +152,7 @@ TEXTS = {
                      "Unavailable: no Discord application ID in this build"),
 
     # Historique
-    "h_title": ("RL Overlay - Historique", "RL Overlay - History"),
+    "h_title": ("RL Stats - Historique", "RL Stats - History"),
     "h_overview": ("Progression", "Progress"),
     "h_players": ("Joueurs croisés", "Players met"),
     "h_matches_tab": ("Matchs", "Games"),

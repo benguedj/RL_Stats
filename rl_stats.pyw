@@ -1,4 +1,4 @@
-"""RL Overlay - compteur automatique de victoires / defaites pour Rocket League.
+"""RL Stats - compteur automatique de victoires / defaites pour Rocket League.
 
 Utilise la Stats API officielle de Rocket League (socket TCP local, port 49123),
 autorisee par Psyonix : aucune injection, aucun risque avec l'anti-cheat.
@@ -12,6 +12,7 @@ import math
 import os
 import queue
 import re
+import shutil
 import socket
 import struct
 import subprocess
@@ -43,7 +44,13 @@ from ui_windows import HistoryWindow, SettingsWindow, hex_to_rgb  # noqa: E402
 
 if getattr(sys, "frozen", False):
     # Version .exe : APP_DIR est un dossier temporaire, les donnees vont dans %APPDATA%
-    DATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "RL Overlay")
+    _appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
+    DATA_DIR = os.path.join(_appdata, "RL Stats")
+    _old_dir = os.path.join(_appdata, "RL Overlay")  # nom de l'app jusqu'a la version 1.1
+    if not os.path.isdir(DATA_DIR) and os.path.isdir(_old_dir):
+        # Copie (et non deplacement) : l'ancienne version peut encore tourner et garder un fichier ouvert
+        with contextlib.suppress(OSError):
+            shutil.copytree(_old_dir, DATA_DIR)
     os.makedirs(DATA_DIR, exist_ok=True)
 else:
     DATA_DIR = APP_DIR
@@ -155,7 +162,7 @@ def launch_command():
 def startup_enabled():
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
-            winreg.QueryValueEx(key, "RL Overlay")
+            winreg.QueryValueEx(key, "RL Stats")
             return True
     except OSError:
         return False
@@ -166,12 +173,24 @@ def set_startup(enabled):
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
             if enabled:
-                winreg.SetValueEx(key, "RL Overlay", 0, winreg.REG_SZ, launch_command())
+                winreg.SetValueEx(key, "RL Stats", 0, winreg.REG_SZ, launch_command())
             else:
                 with contextlib.suppress(FileNotFoundError):
-                    winreg.DeleteValue(key, "RL Overlay")
+                    winreg.DeleteValue(key, "RL Stats")
     except OSError as e:
         log(f"Demarrage avec Windows impossible : {e}")
+
+
+def migrate_startup():
+    """Jusqu'a la version 1.1, le demarrage avec Windows etait enregistre sous "RL Overlay"."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ | winreg.KEY_SET_VALUE) as key:
+            winreg.QueryValueEx(key, "RL Overlay")
+            winreg.DeleteValue(key, "RL Overlay")
+            winreg.SetValueEx(key, "RL Stats", 0, winreg.REG_SZ, launch_command())
+            log("Demarrage avec Windows migre vers RL Stats")
+    except OSError:
+        pass  # rien a migrer
 
 
 def copy_image_to_clipboard(img, hwnd):
@@ -206,7 +225,7 @@ def check_update(out_queue):
     """Interroge les Releases GitHub (thread) ; signale une version plus recente."""
     try:
         req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/releases/latest",
-                                     headers={"User-Agent": f"RL-Overlay/{APP_VERSION}",
+                                     headers={"User-Agent": f"RL-Stats/{APP_VERSION}",
                                               "Accept": "application/vnd.github+json"})
         with urllib.request.urlopen(req, timeout=8) as r:
             data = json.load(r)
@@ -506,14 +525,14 @@ class ShellIcons(threading.Thread):
         wc = self.WNDCLASSW()
         wc.lpfnWndProc = ctypes.cast(self.proc, ctypes.c_void_p)
         wc.hInstance = hinst
-        wc.lpszClassName = "RLOverlayShell"
+        wc.lpszClassName = "RLStatsShell"
         dpi = u.GetDpiForSystem() if hasattr(u, "GetDpiForSystem") else 96
         self.small_icon = self._icon(round(16 * dpi / 96))
         self.big_icon = self._icon(round(24 * dpi / 96))  # taille exacte d'un bouton de barre des taches
         wc.hIcon = self.big_icon
         u.RegisterClassW(ctypes.byref(wc))
         # WS_POPUP | WS_SYSMENU | WS_MINIMIZEBOX, WS_EX_APPWINDOW, hors de l'ecran
-        self.hwnd = u.CreateWindowExW(0x40000, "RLOverlayShell", self.title, 0x80000000 | 0x80000 | 0x20000,
+        self.hwnd = u.CreateWindowExW(0x40000, "RLStatsShell", self.title, 0x80000000 | 0x80000 | 0x20000,
                                       -10000, -10000, 1, 1, None, None, hinst, None)
         u.SendMessageW(self.hwnd, 0x80, 1, self.big_icon or 0)    # WM_SETICON, ICON_BIG
         u.SendMessageW(self.hwnd, 0x80, 0, self.small_icon or 0)  # ICON_SMALL
@@ -1154,6 +1173,7 @@ class SummaryCard:
 class Overlay:
     def __init__(self, lock):
         self.store = Store()
+        migrate_startup()
         i18n.set_lang(self.store["lang"])
         self.apply_colors()
         self.history = History(HISTORY_FILE, log)
@@ -1196,14 +1216,14 @@ class Overlay:
 
         enable_dpi_awareness()
         self.root = tk.Tk()
-        self.root.title("RL Overlay")
+        self.root.title("RL Stats")
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
         self.root.geometry("1x1+0+0")
-        icon = os.path.join(APP_DIR, "rl_overlay_wl.ico")
+        icon = os.path.join(APP_DIR, "rl_stats.ico")
         if os.path.exists(icon):
             self.root.iconbitmap(default=icon)
-        self.shell = ShellIcons(self.q, icon, "RL Overlay", self.store["tray"], self.store["taskbar"])
+        self.shell = ShellIcons(self.q, icon, "RL Stats", self.store["tray"], self.store["taskbar"])
         self.shell.start()
         self.shell.ready.wait(2)
         self.layer = LayeredWindow(self.root)
@@ -1592,7 +1612,7 @@ class Overlay:
         activity = {
             "details": T("dc_details", mode=mode, w=w, l=l, p=round(w * 100 / (w + l)) if w + l else 0),
             "state": state,
-            "assets": {"large_image": "logo", "large_text": f"RL Overlay {APP_VERSION}"},
+            "assets": {"large_image": "logo", "large_text": f"RL Stats {APP_VERSION}"},
             "buttons": [{"label": T("dc_button"), "url": REPO_URL}],
         }
         if self.session_start:
@@ -1998,7 +2018,7 @@ def main():
         # Lance via pythonw : sans identifiant propre, Windows grouperait le bouton de la
         # barre des taches avec Python (et son logo). L'exe, lui, est groupe avec son icone.
         with contextlib.suppress(AttributeError, OSError):
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("RLOverlay.App")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("RLStats.App")
     lock = socket.socket()
     try:
         lock.bind(("127.0.0.1", LOCK_PORT))

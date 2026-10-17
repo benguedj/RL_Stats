@@ -1,4 +1,4 @@
-RL Overlay - compteur automatique de victoires / défaites pour Rocket League
+RL Stats - compteur automatique de victoires / défaites pour Rocket League
 ===========================================================================
 
 L'overlay affiche tes victoires, tes défaites et ton ratio de la session,
@@ -11,7 +11,7 @@ les overlays) : rien n'est injecté dans le jeu, aucun risque avec l'anti-cheat.
 
 INSTALLATION
 ------------
-1. Mets "RL Overlay.exe" où tu veux (Bureau, Documents...).
+1. Mets "RL Stats.exe" où tu veux (Bureau, Documents...).
 2. Double-clique dessus.
    Au premier lancement, Windows peut afficher "Windows a protégé votre
    ordinateur" : clique sur "Informations complémentaires" puis
@@ -67,7 +67,7 @@ UTILISATION
   "^" : pour la garder visible, fais-la glisser à côté de l'horloge.
 - Ctrl+Maj+H : masquer / afficher l'overlay.
   Ctrl+Maj+R : réinitialiser la session.
-  Relancer RL Overlay.exe réaffiche aussi l'overlay s'il était masqué.
+  Relancer RL Stats.exe réaffiche aussi l'overlay s'il était masqué.
 - Clic droit > "Joueurs de la partie (Tracker)" : un clic sur un nom ouvre sa
   page Tracker Network (rang, MMR) dans le navigateur.
 - Si les résultats sont inversés, clic droit > "Définir mon pseudo..." et
@@ -82,4 +82,4 @@ Seuls les matchs en ligne sont comptés. Quitter un match en cours compte
 comme une défaite. Le jeu ne fournit ni rang ni MMR : l'overlay ne peut pas
 les afficher.
 
-Les réglages, l'historique et le journal sont dans %APPDATA%\RL Overlay
+Les réglages, l'historique et le journal sont dans %APPDATA%\RL Stats

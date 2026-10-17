@@ -1,4 +1,4 @@
-# RL Overlay
+# RL Stats
 
 **Automatic win / loss tracker for Rocket League**, displayed right around your boost meter.
 Session stats per mode, post-match summary, history and progress charts, OBS browser source.
@@ -14,9 +14,9 @@ nothing is injected into the game and nothing touches the anti-cheat. Everything
 
 ## Download
 
-👉 **[Download the latest version](https://github.com/benguedj/RL_Stats/releases/latest)** (`RL Overlay.zip`, Windows 10/11)
+👉 **[Download the latest version](https://github.com/benguedj/RL_Stats/releases/latest)** (`RL Stats.zip`, Windows 10/11)
 
-1. Unzip and double-click **`RL Overlay.exe`** (no install needed).
+1. Unzip and double-click **`RL Stats.exe`** (no install needed).
    Windows SmartScreen may say *"Windows protected your PC"*: click **More info → Run anyway**
    (the exe is not code-signed).
 2. Start Rocket League, or **restart** it if it was already running (the game only reads its
@@ -83,9 +83,12 @@ in the players menu.
 
 **Are offline / private matches counted?** Only online matches are counted.
 
-**Where is my data?** In `%APPDATA%\RL Overlay` (settings, match history, log). Your data is never
+**Where is my data?** In `%APPDATA%\RL Stats` (settings, match history, log). Your data is never
 sent anywhere. The only network request is the update check, which asks GitHub for the latest
 release version (can be turned off in Settings → System).
+
+**Wasn't it called RL Overlay?** Yes, until version 1.1. Your settings, history and trophies are
+migrated automatically from `%APPDATA%\RL Overlay` on first launch.
 
 **Some advanced stats are missing.** Boost stats are only sent by the game for your own team, and
 stats like kickoffs, boost and the goal map are recorded starting with version 1.1.
@@ -101,10 +104,10 @@ Requirements: Windows 10/11, Python 3.10+.
 git clone https://github.com/benguedj/RL_Stats.git
 cd RL_Stats
 pip install -r requirements.txt
-pythonw rl_overlay.pyw
+pythonw rl_stats.pyw
 ```
 
-Build the standalone exe (`dist\RL Overlay.exe` + `dist\RL Overlay.zip`):
+Build the standalone exe (`dist\RL Stats.exe` + `dist\RL Stats.zip`):
 
 ```bat
 build.bat
@@ -114,7 +117,7 @@ build.bat
 
 | File | Role |
 |---|---|
-| `rl_overlay.pyw` | Entry point: Stats API connection, match tracking, overlay window, tray icon, hotkeys |
+| `rl_stats.pyw` | Entry point: Stats API connection, match tracking, overlay window, tray icon, hotkeys |
 | `designs.py` | Overlay styles, animations and match summary card, drawn with Pillow |
 | `history.py` | Match history (`matches.json`) and statistics |
 | `achievements.py` | Trophies and personal records |
@@ -122,14 +125,14 @@ build.bat
 | `ui_windows.py` | Settings and History windows (Tkinter) |
 | `obs_server.py` | Local page for OBS (streamer mode) |
 | `i18n.py` | English / French texts |
-| `rl_overlay.spec`, `build.bat` | PyInstaller build |
+| `rl_stats.spec`, `build.bat` | PyInstaller build |
 | `packaging/` | Readme files shipped in the zip |
 
 ## License
 
 [MIT](LICENSE) © benguedj
 
-*RL Overlay is a fan-made project, not affiliated with or endorsed by Psyonix or Epic Games.
+*RL Stats is a fan-made project, not affiliated with or endorsed by Psyonix or Epic Games.
 Rocket League is a trademark of Psyonix LLC.*
 
 ---
@@ -140,7 +143,7 @@ Rocket League is a trademark of Psyonix LLC.*
 
 👉 **[Télécharger la dernière version](https://github.com/benguedj/RL_Stats/releases/latest)**, puis :
 
-1. Dézippe et lance **`RL Overlay.exe`**. Si Windows affiche *« Windows a protégé votre ordinateur »* :
+1. Dézippe et lance **`RL Stats.exe`**. Si Windows affiche *« Windows a protégé votre ordinateur »* :
    **Informations complémentaires → Exécuter quand même** (l'exe n'est pas signé).
 2. Lance Rocket League (ou **relance-le** s'il était ouvert). L'overlay active la Stats API tout seul.
 3. Dans les options vidéo du jeu, choisis **Fenêtré sans bordure**.
@@ -156,4 +159,4 @@ démarrage avec Windows, notification des mises à jour, français / anglais.
 glisser pour le déplacer, `Ctrl+Maj+H` pour le masquer, `Ctrl+Maj+R` pour réinitialiser la session.
 
 Utilise la **Stats API officielle** de Rocket League : rien n'est injecté dans le jeu, aucun risque
-avec l'anti-cheat. Les données restent sur ton PC (`%APPDATA%\RL Overlay`).
+avec l'anti-cheat. Les données restent sur ton PC (`%APPDATA%\RL Stats`).

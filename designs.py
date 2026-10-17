@@ -671,7 +671,7 @@ def render_session_card(info, T):
     d.rectangle([0, 0, split, 8 * s], fill=GREEN)
     d.rectangle([split, 0, W, 8 * s], fill=RED)
 
-    t = text_img([("RL OVERLAY", font(round(16 * s)), MUTED, 0), ("·  " + T("card_session"), font(round(16 * s), SEMI),
+    t = text_img([("RL STATS", font(round(16 * s)), MUTED, 0), ("·  " + T("card_session"), font(round(16 * s), SEMI),
                                                                    MUTED, 0)], shear=0)
     img.alpha_composite(t, (round(pad), round(30 * s)))
     t = text_img([(info["date"], font(round(16 * s), SEMI), MUTED, 0)], shear=0)

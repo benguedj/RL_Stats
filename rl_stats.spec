@@ -1,11 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Build : pyinstaller rl_overlay.spec  (ou build.bat)
+# Build : pyinstaller rl_stats.spec  (ou build.bat)
 
 a = Analysis(
-    ['rl_overlay.pyw'],
+    ['rl_stats.pyw'],
     pathex=['.'],
     binaries=[],
-    datas=[('rl_overlay_wl.ico', '.')],
+    datas=[('rl_stats.ico', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='RL Overlay',
+    name='RL Stats',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -35,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['rl_overlay_wl.ico'],
+    icon=['rl_stats.ico'],
 )

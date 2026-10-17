@@ -12,7 +12,7 @@ OBS_PORT = 49124
 OBS_URL = f"http://127.0.0.1:{OBS_PORT}/"
 
 PAGE = """<!doctype html>
-<html><head><meta charset="utf-8"><title>RL Overlay</title>
+<html><head><meta charset="utf-8"><title>RL Stats</title>
 <style>
   :root { --win: #2ee66b; --loss: #ff4d4d; --panel: rgba(11,19,34,.92); --mid: rgba(20,31,54,.92);
           --edge: #344666; --fg: #f1f5f9; --muted: #8c98ad; --amber: #f59e0b; }

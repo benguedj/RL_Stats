@@ -1,4 +1,4 @@
-RL Overlay - automatic win / loss counter for Rocket League
+RL Stats - automatic win / loss counter for Rocket League
 ===========================================================
 
 The overlay shows your session wins, losses and win rate right above the boost
@@ -10,7 +10,7 @@ overlays): nothing is injected into the game, no anti-cheat risk.
 
 SETUP
 -----
-1. Put "RL Overlay.exe" anywhere (Desktop, Documents...).
+1. Put "RL Stats.exe" anywhere (Desktop, Documents...).
 2. Double-click it.
    On first launch, Windows may show "Windows protected your PC": click
    "More info" then "Run anyway" (the program is not signed, this is normal).
@@ -63,7 +63,7 @@ USAGE
   icons behind the "^" arrow: drag it next to the clock to keep it visible.
 - Ctrl+Shift+H: hide / show the overlay.
   Ctrl+Shift+R: reset the session.
-  Launching RL Overlay.exe again also shows the overlay if it was hidden.
+  Launching RL Stats.exe again also shows the overlay if it was hidden.
 - Right-click > "Players in this game (Tracker)": click a name to open their
   Tracker Network page (rank, MMR) in your browser.
 - If results are reversed, right-click > "Set my in-game name..." and type
@@ -77,4 +77,4 @@ URL http://127.0.0.1:49124/ , width 600, height 260.
 Only online matches are counted. Leaving a match early counts as a loss.
 The game does not provide rank or MMR, so the overlay cannot show them.
 
-Settings, history and log are stored in %APPDATA%\RL Overlay
+Settings, history and log are stored in %APPDATA%\RL Stats

@@ -661,7 +661,7 @@ class HistoryWindow:
             c.create_oval(px - r, py - r, px + r, py + r, fill=color, outline=PANEL, width=2)
 
     def export(self):
-        path = filedialog.asksaveasfilename(parent=self.win, defaultextension=".csv", initialfile="rl_overlay.csv",
+        path = filedialog.asksaveasfilename(parent=self.win, defaultextension=".csv", initialfile="rl_stats.csv",
                                             filetypes=[("CSV", "*.csv")])
         if path:
             self.history.export_csv(path)
