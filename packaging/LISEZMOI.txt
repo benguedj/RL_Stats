@@ -68,7 +68,7 @@ UTILISATION
   "^" : pour la garder visible, fais-la glisser à côté de l'horloge.
 - Ctrl+Maj+H : masquer / afficher l'overlay.
   Ctrl+Maj+R : réinitialiser la session.
-  Ctrl+Maj+M : ouvrir le menu (en jeu, le curseur de la souris est caché).
+  Ctrl+Maj+O : ouvrir le menu (en jeu, le curseur de la souris est caché).
   Relancer RL Stats.exe réaffiche aussi l'overlay s'il était masqué.
 - Clic droit > "Joueurs de la partie (Tracker)" : un clic sur un nom ouvre sa
   page Tracker Network (rang, MMR) dans le navigateur.

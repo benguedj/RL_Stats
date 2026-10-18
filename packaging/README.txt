@@ -64,7 +64,7 @@ USAGE
   icons behind the "^" arrow: drag it next to the clock to keep it visible.
 - Ctrl+Shift+H: hide / show the overlay.
   Ctrl+Shift+R: reset the session.
-  Ctrl+Shift+M: open the menu (in game, the mouse cursor is hidden).
+  Ctrl+Shift+O: open the menu (in game, the mouse cursor is hidden).
   Launching RL Stats.exe again also shows the overlay if it was hidden.
 - Right-click > "Players in this game (Tracker)": click a name to open their
   Tracker Network page (rank, MMR) in your browser.

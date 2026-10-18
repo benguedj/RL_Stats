@@ -426,13 +426,13 @@ class Sounds:
 # --------------------------------------------------------------------------
 
 class Hotkeys(threading.Thread):
-    """Ctrl+Maj+H (masquer / afficher), Ctrl+Maj+R (reinitialiser la session), Ctrl+Maj+M (menu).
+    """Ctrl+Maj+H (masquer / afficher), Ctrl+Maj+R (reinitialiser la session), Ctrl+Maj+O (menu).
 
     RegisterHotKey envoie WM_HOTKEY au thread qui l'a enregistre : ce thread a donc
     sa propre boucle de messages et transmet les touches a l'interface via la file.
     """
 
-    KEYS = {1: ("toggle", 0x48), 2: ("reset", 0x52), 3: ("menu", 0x4D)}  # H, R, M
+    KEYS = {1: ("toggle", 0x48), 2: ("reset", 0x52), 3: ("menu", 0x4F)}  # H, R, O
 
     def __init__(self, out_queue):
         super().__init__(daemon=True)
@@ -2001,7 +2001,7 @@ class Overlay:
         self.show_menu_at(e.x_root, e.y_root, mouse=True)
 
     def open_menu_from_game(self):
-        """Menu ouvert au clavier (Ctrl+Maj+M), a cote de l'overlay : dans le jeu le
+        """Menu ouvert au clavier (Ctrl+Maj+O), a cote de l'overlay : dans le jeu le
         curseur est cache. A la fermeture, on rend la main au jeu."""
         if self._dragging:
             return

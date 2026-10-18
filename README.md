@@ -60,10 +60,10 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 
 ## Usage
 
-- **Menu**: hover the overlay and click the `☰` button, or right-click it (or the tray icon), or press `Ctrl+Shift+M` in game: history, settings, appearance, players in the game, score correction, quit. Arrow keys, `Enter` and `Esc` work too.
+- **Menu**: hover the overlay and click the `☰` button, or right-click it (or the tray icon), or press `Ctrl+Shift+O` in game: history, settings, appearance, players in the game, score correction, quit. Arrow keys, `Enter` and `Esc` work too.
 - **Hover** the overlay: `+W` `-W` `+L` `-L` `☰` `X` buttons.
 - **Drag** it to move it (the position is remembered per style).
-- **Shortcuts**: `Ctrl+Shift+H` hide / show, `Ctrl+Shift+R` reset session, `Ctrl+Shift+M` open the menu (in game, the mouse cursor is hidden).
+- **Shortcuts**: `Ctrl+Shift+H` hide / show, `Ctrl+Shift+R` reset session, `Ctrl+Shift+O` open the menu (in game, the mouse cursor is hidden).
 - **Players in this game (Tracker)**: click a name to open their Tracker Network profile (rank, MMR).
 - If wins and losses are swapped: right-click → *Set my in-game name…*
 
@@ -158,7 +158,7 @@ démarrage avec Windows, notification des mises à jour, français / anglais.
 
 **Utilisation** : bouton `☰` au survol de l'overlay, clic droit (ou sur l'icône près de l'horloge) pour le menu,
 glisser pour le déplacer, `Ctrl+Maj+H` pour le masquer, `Ctrl+Maj+R` pour réinitialiser la session,
-`Ctrl+Maj+M` pour ouvrir le menu en jeu.
+`Ctrl+Maj+O` pour ouvrir le menu en jeu.
 
 Utilise la **Stats API officielle** de Rocket League : rien n'est injecté dans le jeu, aucun risque
 avec l'anti-cheat. Les données restent sur ton PC (`%APPDATA%\RL Stats`).
