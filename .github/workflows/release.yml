@@ -1,0 +1,99 @@
+# Construit "RL Stats.exe" sur GitHub et l'attache a la release du tag.
+# Usage : mettre a jour APP_VERSION dans rl_stats.pyw, commit, puis
+#   git tag v1.2.1 && git push origin v1.2.1
+# Lancement manuel (onglet Actions) : build seul, sans release, pour tester.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check tag matches APP_VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path rl_stats.pyw -Pattern '^APP_VERSION = "(.+)"').Matches[0].Groups[1].Value
+          if ("v$version" -ne "${{ github.ref_name }}") {
+            Write-Error "Tag ${{ github.ref_name }} ne correspond pas a APP_VERSION = $version dans rl_stats.pyw"
+            exit 1
+          }
+
+      - name: Build exe
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements.txt -r requirements-build.txt
+          pyinstaller --noconfirm rl_stats.spec
+
+      - name: Upload unsigned exe
+        id: unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: rl-stats-unsigned
+          path: dist/RL Stats.exe
+
+      # Signature SignPath : s'active toute seule une fois la variable de depot
+      # SIGNPATH_ORGANIZATION_ID et le secret SIGNPATH_API_TOKEN configures
+      # (Settings > Secrets and variables > Actions).
+      - name: Sign exe (SignPath)
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: RL_Stats
+          signing-policy-slug: ${{ startsWith(github.ref, 'refs/tags/') && 'release-signing' || 'test-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Use signed exe
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        shell: pwsh
+        run: Copy-Item -Force "signed/RL Stats.exe" "dist/RL Stats.exe"
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          Copy-Item packaging/README.txt, packaging/LISEZMOI.txt dist/
+          Compress-Archive -Force -Path "dist/RL Stats.exe", dist/README.txt, dist/LISEZMOI.txt -DestinationPath "dist/RL Stats.zip"
+          Get-FileHash "dist/RL Stats.exe", "dist/RL Stats.zip" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content -Encoding utf8NoBOM dist/SHA256SUMS.txt
+          Get-Content dist/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rl-stats
+          path: |
+            dist/RL Stats.zip
+            dist/SHA256SUMS.txt
+
+      # Cree la release en brouillon (a relire puis publier sur GitHub),
+      # ou remplace les fichiers si la release du tag existe deja.
+      - name: Attach to GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --draft --title $tag --generate-notes
+          }
+          gh release upload $tag "dist/RL Stats.zip" dist/SHA256SUMS.txt --clobber

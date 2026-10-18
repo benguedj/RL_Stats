@@ -7,7 +7,7 @@ if not exist .venv (
     python -m venv .venv || goto :error
 )
 call .venv\Scripts\activate.bat
-python -m pip install --quiet -r requirements.txt pyinstaller==6.22.3 || goto :error
+python -m pip install --quiet -r requirements.txt -r requirements-build.txt || goto :error
 
 pyinstaller --noconfirm rl_stats.spec || goto :error
 
