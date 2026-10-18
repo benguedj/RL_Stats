@@ -1,6 +1,6 @@
 # Construit "RL Stats.exe" sur GitHub et l'attache a la release du tag.
 # Usage : mettre a jour APP_VERSION dans rl_stats.pyw, commit, puis
-#   git tag v1.3.1 && git push origin v1.3.1
+#   git tag v1.3.2 && git push origin v1.3.2
 # La release est publiee automatiquement (notes generees depuis les commits).
 # Lancement manuel (onglet Actions) : build seul, sans release, pour tester.
 

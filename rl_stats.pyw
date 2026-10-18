@@ -6,6 +6,7 @@ autorisee par Psyonix : aucune injection, aucun risque avec l'anti-cheat.
 
 import contextlib
 import ctypes
+import hashlib
 import io
 import json
 import math
@@ -26,6 +27,7 @@ import wave
 import webbrowser
 import winreg
 import winsound
+import zipfile
 from collections import Counter
 from ctypes import wintypes
 from tkinter import simpledialog
@@ -59,7 +61,7 @@ DATA_FILE = os.path.join(DATA_DIR, "stats.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "matches.json")
 LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
 
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
 # "Application ID" Discord (https://discord.com/developers/applications) : vide = statut Discord indisponible
@@ -70,6 +72,7 @@ API_HOST = "127.0.0.1"
 API_PORT = 49123
 PACKET_SEND_RATE = 10
 LOCK_PORT = 49199  # empeche de lancer deux overlays en meme temps (le 2e reaffiche le 1er)
+UPDATED_FLAG = "--updated"  # argument de relance apres une mise a jour automatique
 
 # Jauge de boost de RL sur un ecran 1440p, interface du jeu a 100 % : centre a
 # 230 px du bord droit et 228 px du bas (l'overlay s'enroule autour de son sommet).
@@ -225,19 +228,69 @@ def version_tuple(text):
     return tuple(int(n) for n in re.findall(r"\d+", text)[:3])
 
 
+def http_get(url, timeout=8, **headers):
+    req = urllib.request.Request(url, headers={"User-Agent": f"RL-Stats/{APP_VERSION}", **headers})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+
 def check_update(out_queue):
-    """Interroge les Releases GitHub (thread) ; signale une version plus recente."""
+    """Interroge les Releases GitHub (thread) ; signale une version plus recente.
+    Envoie (version, page de la release, {nom du fichier: lien de telechargement})."""
     try:
-        req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/releases/latest",
-                                     headers={"User-Agent": f"RL-Stats/{APP_VERSION}",
-                                              "Accept": "application/vnd.github+json"})
-        with urllib.request.urlopen(req, timeout=8) as r:
-            data = json.load(r)
+        data = json.loads(http_get(f"https://api.github.com/repos/{REPO}/releases/latest",
+                                   Accept="application/vnd.github+json"))
         tag = data.get("tag_name", "")
         if tag and version_tuple(tag) > version_tuple(APP_VERSION):
-            out_queue.put(("update", (tag, data.get("html_url") or f"{REPO_URL}/releases/latest")))
+            assets = {a.get("name"): a.get("browser_download_url") for a in data.get("assets", [])}
+            out_queue.put(("update", (tag, data.get("html_url") or f"{REPO_URL}/releases/latest", assets)))
     except (OSError, ValueError) as e:
         log(f"Verification des mises a jour impossible : {e}")
+
+
+# Mise a jour automatique (version .exe) : le nouvel exe est ecrit a cote de
+# l'actuel (.new). Windows refuse d'ecraser un exe en cours d'execution mais
+# accepte de le renommer : l'actuel devient .old (supprime au lancement suivant).
+UPDATE_ZIP, UPDATE_SUMS, UPDATE_EXE = "RL Stats.zip", "SHA256SUMS.txt", "RL Stats.exe"
+
+
+def can_self_update(assets):
+    return getattr(sys, "frozen", False) and bool(assets.get(UPDATE_ZIP)) and bool(assets.get(UPDATE_SUMS))
+
+
+def download_update(assets, out_queue):
+    """Telecharge et verifie le nouvel exe (thread). Envoie update_ready (chemin) ou update_failed."""
+    try:
+        sums = {}
+        for line in http_get(assets[UPDATE_SUMS]).decode("utf-8-sig").splitlines():
+            parts = line.strip().split(None, 1)
+            if len(parts) == 2:
+                sums[parts[1].lstrip("*")] = parts[0].lower()
+        data = http_get(assets[UPDATE_ZIP], timeout=60)
+        if hashlib.sha256(data).hexdigest() != sums.get(UPDATE_ZIP):
+            raise ValueError("empreinte SHA-256 du zip incorrecte")
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            exe = z.read(UPDATE_EXE)
+        if UPDATE_EXE in sums and hashlib.sha256(exe).hexdigest() != sums[UPDATE_EXE]:
+            raise ValueError("empreinte SHA-256 de l'exe incorrecte")
+        new = sys.executable + ".new"
+        with open(new, "wb") as f:
+            f.write(exe)
+        out_queue.put(("update_ready", new))
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile) as e:
+        log(f"Mise a jour automatique impossible : {e!r}")
+        out_queue.put(("update_failed", None))
+
+
+def remove_old_exe():
+    """Supprime l'exe remplace par une mise a jour (thread : l'ancien processus peut finir de se fermer)."""
+    old = sys.executable + ".old"
+    for _ in range(30):
+        if not os.path.exists(old):
+            return
+        with contextlib.suppress(OSError):
+            os.remove(old)
+        time.sleep(1)
 
 
 def ensure_stats_api_enabled():
@@ -1215,7 +1268,8 @@ class Overlay:
         self.banner_queue = []
         self.session_start = None  # heure du premier match de la session
         self.break_hours = 0  # alertes "pause" deja affichees
-        self.update_info = None  # (version, url) si une mise a jour existe
+        self.update_info = None  # (version, url, fichiers) si une mise a jour existe
+        self.updating = False
         self.restore_session()
         if not self.store["achievements"] and self.history.matches:
             # Premiere version avec trophees : ceux deja merites sont acquis sans annonce
@@ -1265,6 +1319,10 @@ class Overlay:
             self.update_presence()
         if self.store["check_updates"]:
             threading.Thread(target=check_update, args=(self.q,), daemon=True).start()
+        if getattr(sys, "frozen", False):
+            threading.Thread(target=remove_old_exe, daemon=True).start()
+        if UPDATED_FLAG in sys.argv:
+            self.queue_banner(T("updated", v=APP_VERSION), designs.GREEN, None, 6)
         self.check_config()
         self.root.after(100, self.poll)
         self.root.after(300, self.check_focus)
@@ -1688,8 +1746,8 @@ class Overlay:
         entries = [pm.banner("RL STATS", [(str(w), win), ("  –  ", rgb_hex(designs.MUTED)), (str(l), loss)],
                              self.sub_label())]
         if self.update_info:
-            version, url = self.update_info
-            entries += [pm.item(T("m_update", v=version), lambda: webbrowser.open(url), pm.I_UPDATE,
+            version = self.update_info[0]
+            entries += [pm.item(T("m_update", v=version), self.start_update, pm.I_UPDATE,
                                 color=rgb_hex(designs.SKY)), pm.SEPARATOR]
         return entries + [
             pm.sub(T("m_players"), self.menu_players, pm.I_PEOPLE),
@@ -1777,6 +1835,10 @@ class Overlay:
                     self.update_info = payload
                     log(f"Mise a jour disponible : {payload[0]}")
                     self.queue_banner(T("update_banner", v=payload[0]), designs.SKY, None, 8)
+                elif kind == "update_ready":
+                    self.install_update(payload)
+                elif kind == "update_failed":
+                    self.update_failed()
                 elif kind == "hotkey":
                     if payload == "menu":
                         self.open_menu_from_game()
@@ -2080,6 +2142,49 @@ class Overlay:
 
         self.popup.open(self.menu_main, x, y, on_close=closed, keyboard=keyboard)
 
+    # --- Mise a jour ---------------------------------------------------------
+
+    def start_update(self):
+        version, url, assets = self.update_info
+        if not can_self_update(assets):  # lance depuis les sources, ou release sans le zip
+            webbrowser.open(url)
+            return
+        if self.updating:
+            return
+        self.updating = True
+        log(f"Telechargement de la mise a jour {version}")
+        self.show_banner(T("update_downloading", v=version), designs.SKY, None, 60)
+        threading.Thread(target=download_update, args=(assets, self.q), daemon=True).start()
+
+    def install_update(self, new):
+        exe = sys.executable
+        old = exe + ".old"
+        try:
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(old)
+            os.replace(exe, old)
+            try:
+                os.replace(new, exe)
+            except OSError:
+                os.replace(old, exe)
+                raise
+        except OSError as e:  # dossier protege (Program Files...), antivirus...
+            log(f"Remplacement de l'exe impossible : {e!r}")
+            with contextlib.suppress(OSError):
+                os.remove(new)
+            self.update_failed()
+            return
+        log(f"Mise a jour installee, redemarrage : {exe}")
+        self.quit()
+        # Nouveau processus independant : PyInstaller ne doit pas reprendre le dossier temporaire de celui-ci
+        subprocess.Popen([exe, UPDATED_FLAG], env=dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1"),
+                         close_fds=True)
+
+    def update_failed(self):
+        self.updating = False
+        self.show_banner(T("update_failed"), designs.RED, None, 6)
+        webbrowser.open(self.update_info[1])  # repli : telechargement a la main
+
     def quit(self):
         self.store.save()
         self.stop_hotkeys()
@@ -2098,10 +2203,17 @@ def main():
         with contextlib.suppress(AttributeError, OSError):
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("RLStats.App")
     lock = socket.socket()
-    try:
-        lock.bind(("127.0.0.1", LOCK_PORT))
-        lock.listen(2)
-    except OSError:
+    # Apres une mise a jour, l'ancienne version peut mettre quelques secondes a liberer le verrou
+    tries = 30 if UPDATED_FLAG in sys.argv else 1
+    for attempt in range(tries):
+        try:
+            lock.bind(("127.0.0.1", LOCK_PORT))
+            lock.listen(2)
+            break
+        except OSError:
+            if attempt < tries - 1:
+                time.sleep(0.5)
+    else:
         # Deja lance : on demande a l'instance en cours de se reafficher
         with contextlib.suppress(OSError), socket.create_connection(("127.0.0.1", LOCK_PORT), timeout=1):
             pass

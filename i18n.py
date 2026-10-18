@@ -22,6 +22,9 @@ TEXTS = {
     "all_modes": ("TOUS MODES", "ALL MODES"),
 
     "update_banner": ("MISE À JOUR {v} DISPONIBLE", "UPDATE {v} AVAILABLE"),
+    "update_downloading": ("TÉLÉCHARGEMENT DE {v}…", "DOWNLOADING {v}…"),
+    "update_failed": ("MISE À JOUR IMPOSSIBLE", "UPDATE FAILED"),
+    "updated": ("MIS À JOUR EN {v}", "UPDATED TO {v}"),
     "trophy_banner": ("TROPHÉE : {name}", "TROPHY: {name}"),
     "trophy_more": ("+{n} AUTRES TROPHÉES DÉBLOQUÉS", "+{n} MORE TROPHIES UNLOCKED"),
     "record_banner":("RECORD : {name} ({v})", "RECORD: {name} ({v})"),
