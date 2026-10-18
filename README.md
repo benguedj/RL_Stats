@@ -46,7 +46,7 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 | **Advanced stats** | Kickoffs won, average boost, time at 0 boost, supersonic time, map of where your goals go in. |
 | **Discord status** | Shows your mode, session score and streak on your Discord profile (Rich Presence, off by default). |
 | **Tilt alert** | Suggests a break after 3 losses in a row or 2 hours of play (can be turned off). |
-| **Smart display** | Hides itself when the game is not in focus, resumes your session if restarted within 2 h, can start with Windows and stay hidden until the game starts. |
+| **Smart display** | Hides itself when the game is closed or minimized, resumes your session if restarted within 2 h, can start with Windows and stay hidden until the game starts. |
 | **Update notifications** | Tells you when a new version is available on GitHub. |
 | **English / French** | Follows the Windows language, can be changed in Settings. |
 
@@ -60,10 +60,10 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 
 ## Usage
 
-- **Right-click the overlay** (or the tray icon): history, settings, style, players in the game, score correction, quit.
-- **Hover** the overlay: `+W` `-W` `+L` `-L` `X` buttons.
+- **Menu**: hover the overlay and click the `☰` button, or right-click it (or the tray icon), or press `Ctrl+Shift+M` in game: history, settings, appearance, players in the game, score correction, quit. Arrow keys, `Enter` and `Esc` work too.
+- **Hover** the overlay: `+W` `-W` `+L` `-L` `☰` `X` buttons.
 - **Drag** it to move it (the position is remembered per style).
-- **Shortcuts**: `Ctrl+Shift+H` hide / show, `Ctrl+Shift+R` reset session.
+- **Shortcuts**: `Ctrl+Shift+H` hide / show, `Ctrl+Shift+R` reset session, `Ctrl+Shift+M` open the menu (in game, the mouse cursor is hidden).
 - **Players in this game (Tracker)**: click a name to open their Tracker Network profile (rank, MMR).
 - If wins and losses are swapped: right-click → *Set my in-game name…*
 
@@ -123,6 +123,7 @@ build.bat
 | `achievements.py` | Trophies and personal records |
 | `discord_rpc.py` | Discord status (Rich Presence) |
 | `ui_windows.py` | Settings and History windows (Tkinter) |
+| `popup_menu.py` | Overlay menu (dark panel, keyboard navigation) |
 | `obs_server.py` | Local page for OBS (streamer mode) |
 | `i18n.py` | English / French texts |
 | `rl_stats.spec`, `build.bat` | PyInstaller build |
@@ -152,11 +153,12 @@ Rocket League is a trademark of Psyonix LLC.*
 et graphique de progression, joueurs déjà croisés, objectif de session, animations et sons,
 personnalisation (designs, couleurs, opacité), multi-écrans et ultra-larges, mode streamer (OBS),
 icône près de l'horloge, trophées et records, carte de session à coller sur Discord, statut Discord, stats avancées
-(engagements, boost, carte des buts), alerte tilt, masquage auto hors du jeu, reprise de session,
+(engagements, boost, carte des buts), alerte tilt, masquage auto quand le jeu est fermé, reprise de session,
 démarrage avec Windows, notification des mises à jour, français / anglais.
 
-**Utilisation** : clic droit sur l'overlay (ou sur l'icône près de l'horloge) pour le menu,
-glisser pour le déplacer, `Ctrl+Maj+H` pour le masquer, `Ctrl+Maj+R` pour réinitialiser la session.
+**Utilisation** : bouton `☰` au survol de l'overlay, clic droit (ou sur l'icône près de l'horloge) pour le menu,
+glisser pour le déplacer, `Ctrl+Maj+H` pour le masquer, `Ctrl+Maj+R` pour réinitialiser la session,
+`Ctrl+Maj+M` pour ouvrir le menu en jeu.
 
 Utilise la **Stats API officielle** de Rocket League : rien n'est injecté dans le jeu, aucun risque
 avec l'anti-cheat. Les données restent sur ton PC (`%APPDATA%\RL Stats`).

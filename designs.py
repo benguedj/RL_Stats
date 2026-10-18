@@ -95,12 +95,15 @@ def paste_center(base, img, center, angle=0):
     base.alpha_composite(img, (round(center[0] - img.width / 2), round(center[1] - img.height / 2)))
 
 
+BUTTONS_W = 6 * 40 + 5 * 5 + 8  # largeur de la rangee de boutons a l'echelle 1
+
+
 def draw_buttons(d, cx, y1, s):
     """Rangee de boutons centree sur cx, bas a y1 (pixels sur-echantillonnes)."""
     labels = [("+W", "w+", BTN_GREEN), ("-W", "w-", PANEL_MID), ("+L", "l+", BTN_RED),
-              ("-L", "l-", PANEL_MID), ("X", "quit", PANEL_MID)]
+              ("-L", "l-", PANEL_MID), ("", "menu", PANEL_MID), ("X", "quit", PANEL_MID)]
     bw, bh, gap, sl = 40 * s, 24 * s, 5 * s, 6 * s
-    x = cx - (5 * bw + 4 * gap + 8 * s) / 2
+    x = cx - (len(labels) * bw + (len(labels) - 1) * gap + 8 * s) / 2
     y0 = y1 - bh
     bf = font(round(13 * s), SEMI)
     buttons = {}
@@ -109,8 +112,13 @@ def draw_buttons(d, cx, y1, s):
             x += 4 * s
         d.polygon([(x + sl, y0), (x + bw, y0), (x + bw - sl, y1), (x, y1)], fill=fill, outline=EDGE,
                   width=max(1, round(1.2 * s)))
-        bb = bf.getbbox(label)
-        d.text((x + bw / 2 - (bb[0] + bb[2]) / 2, (y0 + y1) / 2 - (bb[1] + bb[3]) / 2), label, font=bf, fill=FG)
+        if key == "menu":  # trois traits
+            for dy in (-5, 0, 5):
+                ly = (y0 + y1) / 2 + dy * s
+                d.line([(x + bw / 2 - 7 * s, ly), (x + bw / 2 + 7 * s, ly)], fill=FG, width=max(1, round(2 * s)))
+        else:
+            bb = bf.getbbox(label)
+            d.text((x + bw / 2 - (bb[0] + bb[2]) / 2, (y0 + y1) / 2 - (bb[1] + bb[3]) / 2), label, font=bf, fill=FG)
         buttons[key] = tuple(round(v / SS) for v in (x, y0, x + bw, y1))
         x += bw + gap
     return buttons
@@ -376,7 +384,7 @@ def render_mini(state, k, hover=False):
     s = k * SS
     BW, BH, CTRL = 170, 34, 24
     top_u = CTRL + 10
-    w_px = round(max(BW, 226) * k)
+    w_px = round(max(BW, BUTTONS_W + 4) * k)  # assez large pour la rangee de boutons
     h_px = round((top_u + BH + 22) * k)
     W, H = w_px * SS, h_px * SS
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))

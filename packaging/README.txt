@@ -46,23 +46,25 @@ FEATURES
 - Discord status: your mode, session score and streak on your Discord
   profile (Settings > Features, off by default).
 - Tilt alert: break suggestion after 3 losses in a row or 2 h of play.
-- Hides itself when the game is not in focus, resumes the session if
-  restarted within 2 h, can start with Windows.
+- Hides itself when the game is closed or minimized, resumes the session
+  if restarted within 2 h, can start with Windows.
 - Notifies you when a new version is available.
 - English / French (follows the Windows language, can be changed).
 
 
 USAGE
 -----
-- Right-click the overlay: history, settings, style, shape, size, score
-  correction, reset session, quit.
-- Mouse hover: +W / -W / +L / -L / X buttons.
+- Menu: hover the overlay and click the menu button (three lines), or
+  right-click the overlay: history, settings, appearance, score correction,
+  reset session, quit.
+- Mouse hover: +W / -W / +L / -L / menu / X buttons.
 - Drag and drop to move it (position is remembered).
 - Icon near the clock and taskbar button: click to hide / show the overlay;
   right-click the icon near the clock for the full menu. Windows 11 puts new
   icons behind the "^" arrow: drag it next to the clock to keep it visible.
 - Ctrl+Shift+H: hide / show the overlay.
   Ctrl+Shift+R: reset the session.
+  Ctrl+Shift+M: open the menu (in game, the mouse cursor is hidden).
   Launching RL Stats.exe again also shows the overlay if it was hidden.
 - Right-click > "Players in this game (Tracker)": click a name to open their
   Tracker Network page (rank, MMR) in your browser.

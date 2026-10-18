@@ -49,7 +49,7 @@ FONCTIONNALITÉS
 - Statut Discord : ton mode, ton score de session et ta série sur ton profil
   Discord (Paramètres > Fonctions, désactivé par défaut).
 - Alerte tilt : pause conseillée après 3 défaites d'affilée ou 2 h de jeu.
-- Masquage automatique quand le jeu n'est pas au premier plan, reprise de la
+- Masquage automatique quand le jeu est fermé ou réduit, reprise de la
   session si l'app est relancée dans les 2 h, démarrage avec Windows.
 - Notification quand une nouvelle version est disponible.
 - Français / anglais (selon la langue de Windows, modifiable).
@@ -57,9 +57,10 @@ FONCTIONNALITÉS
 
 UTILISATION
 -----------
-- Clic droit sur l'overlay : historique, paramètres, design, forme, taille,
-  correction du score, réinitialisation de la session, quitter.
-- Survol à la souris : boutons +W / -W / +L / -L / X.
+- Menu : survoler l'overlay et cliquer sur le bouton menu (trois traits), ou
+  clic droit sur l'overlay : historique, paramètres, apparence, correction du
+  score, réinitialisation de la session, quitter.
+- Survol à la souris : boutons +W / -W / +L / -L / menu / X.
 - Glisser-déposer pour le déplacer (la position est mémorisée).
 - Icône près de l'horloge et bouton dans la barre des tâches : un clic
   masque / affiche l'overlay ; clic droit sur l'icône près de l'horloge :
@@ -67,6 +68,7 @@ UTILISATION
   "^" : pour la garder visible, fais-la glisser à côté de l'horloge.
 - Ctrl+Maj+H : masquer / afficher l'overlay.
   Ctrl+Maj+R : réinitialiser la session.
+  Ctrl+Maj+M : ouvrir le menu (en jeu, le curseur de la souris est caché).
   Relancer RL Stats.exe réaffiche aussi l'overlay s'il était masqué.
 - Clic droit > "Joueurs de la partie (Tracker)" : un clic sur un nom ouvre sa
   page Tracker Network (rang, MMR) dans le navigateur.

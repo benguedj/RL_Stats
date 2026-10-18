@@ -36,6 +36,7 @@ sys.path[:0] = [os.path.join(APP_DIR, "_lib"), APP_DIR]  # Pillow embarque dans 
 import achievements  # noqa: E402
 import designs  # noqa: E402
 import i18n  # noqa: E402
+import popup_menu as pm  # noqa: E402
 from discord_rpc import DiscordPresence  # noqa: E402
 from history import History  # noqa: E402
 from i18n import T  # noqa: E402
@@ -425,13 +426,13 @@ class Sounds:
 # --------------------------------------------------------------------------
 
 class Hotkeys(threading.Thread):
-    """Ctrl+Maj+H (masquer / afficher) et Ctrl+Maj+R (reinitialiser la session).
+    """Ctrl+Maj+H (masquer / afficher), Ctrl+Maj+R (reinitialiser la session), Ctrl+Maj+M (menu).
 
     RegisterHotKey envoie WM_HOTKEY au thread qui l'a enregistre : ce thread a donc
     sa propre boucle de messages et transmet les touches a l'interface via la file.
     """
 
-    KEYS = {1: ("toggle", 0x48), 2: ("reset", 0x52)}  # H, R
+    KEYS = {1: ("toggle", 0x48), 2: ("reset", 0x52), 3: ("menu", 0x4D)}  # H, R, M
 
     def __init__(self, out_queue):
         super().__init__(daemon=True)
@@ -454,6 +455,12 @@ class Hotkeys(threading.Thread):
     def stop(self):
         if self.thread_id:
             ctypes.windll.user32.PostThreadMessageW(self.thread_id, 0x0012, 0, 0)  # WM_QUIT
+
+
+def press_key(vk):
+    u = ctypes.windll.user32
+    u.keybd_event(vk, 0, 0, 0)
+    u.keybd_event(vk, 0, 2, 0)  # KEYEVENTF_KEYUP
 
 
 # --------------------------------------------------------------------------
@@ -1197,7 +1204,7 @@ class Overlay:
         self.settings_window = None
         self.history_window = None
         self.hotkeys = None
-        self.auto_hidden = False  # masque car le jeu n'est pas au premier plan
+        self.auto_hidden = False  # masque car le jeu est ferme ou reduit
         self.grace_until = time.monotonic() + 8  # visible quelques secondes au lancement
         self.banner_queue = []
         self.session_start = None  # heure du premier match de la session
@@ -1237,7 +1244,7 @@ class Overlay:
         self.root.bind("<Enter>", self.on_hover)
         self.root.bind("<Leave>", self.on_hover)
 
-        self._build_menu()
+        self.popup = pm.PopupMenu(self.root)
         self.draw()
 
         ApiListener(self.q).start()
@@ -1284,7 +1291,6 @@ class Overlay:
         self.store[key] = value
         if key == "lang":
             i18n.set_lang(value)
-            self._build_menu()
             for window in (self.settings_window, self.history_window):
                 if window:
                     window.rebuild() if window is self.settings_window else window.build()
@@ -1301,6 +1307,7 @@ class Overlay:
                 self.obs.stop()
         elif key == "hotkeys":
             self.start_hotkeys() if value else self.stop_hotkeys()
+            return
         elif key == "tray":
             self.shell.set_tray(value)
             return
@@ -1532,29 +1539,29 @@ class Overlay:
         if self.hidden:
             self.card.hide()
         else:
-            self.grace_until = time.monotonic() + 5  # reafficher meme si le jeu n'est pas au premier plan
+            self.grace_until = time.monotonic() + 5  # reafficher meme si le jeu est ferme ou reduit
             self.auto_hidden = False
         self.draw()
 
-    def game_in_focus(self):
-        """Vrai si le jeu ou une fenetre de l'app (menu, parametres...) est au premier plan,
-        None quand on ne peut pas trancher (l'overlay lui-meme vient d'etre clique, transition...)."""
+    def game_visible(self):
+        """Vrai si le jeu est lance et pas reduit, meme s'il n'est pas au premier plan (pour
+        garder l'overlay en regardant Discord sur un autre ecran), ou si une fenetre de l'app
+        (menu, parametres...) est au premier plan. None quand on ne peut pas trancher."""
         u = ctypes.windll.user32
         u.GetForegroundWindow.restype = ctypes.c_void_p
-        u.GetAncestor.restype = ctypes.c_void_p
-        u.GetAncestor.argtypes = [ctypes.c_void_p, ctypes.c_uint]
         fg = u.GetForegroundWindow()
-        if not fg or fg in (self.layer.hwnd, self.card.layer.hwnd, self.shell.hwnd):
-            return None
-        pid = wintypes.DWORD()
-        u.GetWindowThreadProcessId(ctypes.c_void_p(fg), ctypes.byref(pid))
-        if pid.value == os.getpid():
-            return True
-        game = self.screens.game_hwnd
-        return bool(game) and (fg == game or u.GetAncestor(fg, 2) == game)  # GA_ROOT
+        if fg in (self.layer.hwnd, self.card.layer.hwnd, self.shell.hwnd):
+            return None  # l'overlay lui-meme vient d'etre clique
+        if fg:
+            pid = wintypes.DWORD()
+            u.GetWindowThreadProcessId(ctypes.c_void_p(fg), ctypes.byref(pid))
+            if pid.value == os.getpid():
+                return True
+        game = self.screens.game_hwnd  # recherche toutes les 2 s par compute_viewport
+        return bool(game) and bool(u.IsWindow(ctypes.c_void_p(game))) and not u.IsIconic(ctypes.c_void_p(game))
 
     def check_focus(self, reschedule=True):
-        focus = self.game_in_focus()
+        focus = self.game_visible()
         if not self.store["auto_hide"] or self._dragging or time.monotonic() < self.grace_until:
             hide = False
         elif focus is None:
@@ -1656,53 +1663,56 @@ class Overlay:
 
     # --- Menu ---------------------------------------------------------------
 
-    def _build_menu(self):
-        if getattr(self, "menu", None):
-            self.menu.destroy()
-        m = tk.Menu(self.root, tearoff=0)
+    def menu_main(self):
+        w, l = self.counts()
+        win, loss = self.store["win_color"], self.store["loss_color"]
+        lw, ll = T("m_w"), T("m_l")
+        entries = [pm.banner("RL STATS", [(str(w), win), ("  –  ", rgb_hex(designs.MUTED)), (str(l), loss)],
+                             self.sub_label())]
         if self.update_info:
             version, url = self.update_info
-            m.add_command(label=T("m_update", v=version), command=lambda: webbrowser.open(url))
-            m.add_separator()
-        self.players_menu = tk.Menu(m, tearoff=0)
-        m.add_cascade(label=T("m_players"), menu=self.players_menu)
-        m.add_command(label=T("m_history"), command=self.open_history)
-        m.add_command(label=T("m_settings"), command=self.open_settings)
-        m.add_command(label=T("m_last_summary"), command=lambda: self.show_summary())
-        m.add_command(label=T("m_share"), command=self.share_card)
-        m.add_separator()
-        m.add_command(label=T("m_reset"), command=self.reset_session)
-        m.add_command(label=T("m_win_plus"), command=lambda: self.adjust(1, 0))
-        m.add_command(label=T("m_win_minus"), command=lambda: self.adjust(-1, 0))
-        m.add_command(label=T("m_loss_plus"), command=lambda: self.adjust(0, 1))
-        m.add_command(label=T("m_loss_minus"), command=lambda: self.adjust(0, -1))
-        m.add_separator()
-        design_menu = tk.Menu(m, tearoff=0)
-        self.design_var = tk.StringVar(value=self.store["design"])
-        for key in designs.STYLES:
-            design_menu.add_radiobutton(label=T(f"style_{key}"), value=key, variable=self.design_var,
-                                        command=lambda k=key: self.set_design(k))
-        m.add_cascade(label=T("m_design"), menu=design_menu)
-        shape_menu = tk.Menu(m, tearoff=0)
-        self.shape_var = tk.StringVar(value=self.store["shape"])
-        for key in designs.SHAPES:
-            shape_menu.add_radiobutton(label=T(f"shape_{key}"), value=key, variable=self.shape_var,
-                                       command=lambda k=key: self.set_shape(k))
-        m.add_cascade(label=T("m_shape"), menu=shape_menu)
-        size_menu = tk.Menu(m, tearoff=0)
-        for value, label in SIZES.items():
-            size_menu.add_command(label=label, command=lambda v=value: self.set_size(v))
-        m.add_cascade(label=T("m_size"), menu=size_menu)
-        preview_menu = tk.Menu(m, tearoff=0)
-        preview_menu.add_command(label=T("m_victory"), command=lambda: self.celebrate(True, preview=True))
-        preview_menu.add_command(label=T("m_defeat"), command=lambda: self.celebrate(False, preview=True))
-        m.add_cascade(label=T("m_preview"), menu=preview_menu)
-        m.add_command(label=T("m_replace"), command=self.reset_position)
-        m.add_command(label=T("m_name"), command=self.edit_name)
-        m.add_separator()
-        m.add_command(label=T("m_hide"), command=self.toggle_hidden)
-        m.add_command(label=T("m_quit"), command=self.quit)
-        self.menu = m
+            entries += [pm.item(T("m_update", v=version), lambda: webbrowser.open(url), pm.I_UPDATE,
+                                color=rgb_hex(designs.SKY)), pm.SEPARATOR]
+        return entries + [
+            pm.sub(T("m_players"), self.menu_players, pm.I_PEOPLE),
+            pm.item(T("m_history"), self.open_history, pm.I_HISTORY),
+            pm.item(T("m_settings"), self.open_settings, pm.I_SETTINGS),
+            pm.item(T("m_last_summary"), lambda: self.show_summary(), pm.I_SUMMARY),
+            pm.item(T("m_share"), self.share_card, pm.I_COPY),
+            pm.SEPARATOR,
+            pm.chips(T("m_score"), [(f"+{lw}", win, lambda: self.adjust(1, 0)),
+                                    (f"\u2212{lw}", win, lambda: self.adjust(-1, 0)),
+                                    (f"+{ll}", loss, lambda: self.adjust(0, 1)),
+                                    (f"\u2212{ll}", loss, lambda: self.adjust(0, -1))], pm.I_EDIT),
+            pm.item(T("m_reset"), self.reset_session, pm.I_RESET),
+            pm.SEPARATOR,
+            pm.sub(T("m_appearance"), self.menu_appearance, pm.I_COLOR),
+            pm.item(T("m_name"), self.edit_name, pm.I_CONTACT),
+            pm.SEPARATOR,
+            pm.item(T("m_hide"), self.toggle_hidden, pm.I_HIDE, hint=T("m_hide_key")),
+            pm.item(T("m_quit"), self.quit, pm.I_QUIT),
+        ]
+
+    def menu_appearance(self):
+        sky, fg = rgb_hex(designs.SKY), rgb_hex(designs.FG)
+        entries = [pm.header(T("m_design").upper())]
+        entries += [pm.choice(T(f"style_{key}"), self.store["design"] == key, lambda k=key: self.set_design(k))
+                    for key in designs.STYLES]
+        entries.append(pm.header(T("m_shape").upper()))
+        entries += [pm.choice(T(f"shape_{key}"), self.store["shape"] == key, lambda k=key: self.set_shape(k))
+                    for key in designs.SHAPES]
+        return entries + [
+            pm.SEPARATOR,
+            pm.chips(T("m_size"), [(label.replace(" %", ""), sky if self.store["size"] == value else fg,
+                                    lambda v=value: self.set_size(v)) for value, label in SIZES.items()], pm.I_SIZE),
+            pm.item(T("m_replace"), self.reset_position, pm.I_PLACE, keep_open=True),
+            pm.SEPARATOR,
+            pm.header(T("m_preview").upper()),
+            pm.item(T("m_victory"), lambda: self.celebrate(True, preview=True), pm.I_PLAY,
+                    color=self.store["win_color"], keep_open=True),
+            pm.item(T("m_defeat"), lambda: self.celebrate(False, preview=True), pm.I_PLAY,
+                    color=self.store["loss_color"], keep_open=True),
+        ]
 
     def set_size(self, value):
         self.store["size"] = value
@@ -1738,10 +1748,12 @@ class Overlay:
                 elif kind == "update":
                     self.update_info = payload
                     log(f"Mise a jour disponible : {payload[0]}")
-                    self._build_menu()
                     self.queue_banner(T("update_banner", v=payload[0]), designs.SKY, None, 8)
                 elif kind == "hotkey":
-                    self.toggle_hidden() if payload == "toggle" else self.reset_session()
+                    if payload == "menu":
+                        self.open_menu_from_game()
+                    else:
+                        self.toggle_hidden() if payload == "toggle" else self.reset_session()
                 elif kind == "wake":
                     if self.hidden:
                         self.toggle_hidden()
@@ -1752,7 +1764,7 @@ class Overlay:
                     if payload == "quit":
                         return
                 elif kind == "shell_menu":
-                    self.show_menu_at(*payload, from_tray=True)
+                    self.show_menu_at(*payload)
                 else:
                     try:
                         self.tracker.handle(*payload)
@@ -1932,6 +1944,8 @@ class Overlay:
             if x0 <= e.x <= x1 and y0 <= e.y <= y1:
                 {"w+": lambda: self.adjust(1, 0), "w-": lambda: self.adjust(-1, 0),
                  "l+": lambda: self.adjust(0, 1), "l-": lambda: self.adjust(0, -1),
+                 "menu": lambda: self.show_menu_at(self.root.winfo_rootx() + x0, self.root.winfo_rooty() + y0,
+                                                   mouse=True),
                  "quit": self.quit}[key]()
                 return
         self._dragging = True
@@ -1956,51 +1970,86 @@ class Overlay:
             self.store.save()
             self.draw()
 
-    def fill_players_menu(self):
-        pm = self.players_menu
-        pm.delete(0, "end")
+    def menu_players(self):
         players = self.tracker.last_players
         if not players:
-            pm.add_command(label=T("m_no_game"), state="disabled")
-            return
+            return [pm.disabled(T("m_no_game"))]
         me = (self.store["player_name"] or self.store["detected_name"]).strip().lower()
-        for team, team_label in ((0, T("m_blue")), (1, T("m_orange"))):
+        entries = []
+        for team, team_label, color in ((0, T("m_blue"), "#3b82f6"), (1, T("m_orange"), "#f97316")):
             members = [p for p in players if p.get("TeamNum") == team]
             if not members:
                 continue
-            if pm.index("end") is not None:
-                pm.add_separator()
-            pm.add_command(label=team_label, state="disabled")
+            entries.append(pm.header(team_label, color))
             for p in sorted(members, key=lambda p: -int(p.get("Score") or 0)):
                 name = p.get("Name") or "?"
                 is_me = name.strip().lower() == me
-                label = f"   {name}" + (f"  {T('m_you')}" if is_me else "")
                 pid = self.tracker.player_id(p)
                 met = self.history.met(pid) if pid and not is_me else None
+                hint = T("m_you") if is_me else ""
                 if met:
-                    label += "   · " + T("m_met", n=met["n"], w=met["with"][0] + met["against"][0],
-                                         l=met["with"][1] + met["against"][1])
+                    hint = T("m_met", n=met["n"], w=met["with"][0] + met["against"][0],
+                             l=met["with"][1] + met["against"][1])
                 url = tracker_url({"PrimaryId": pid or p.get("PrimaryId"), "Name": name})
                 if url:
-                    pm.add_command(label=label, command=lambda u=url: webbrowser.open(u))
+                    entries.append(pm.item(name, lambda u=url: webbrowser.open(u), pm.I_LINK, hint=hint))
                 else:
-                    pm.add_command(label=f"{label}  {T('m_bot')}", state="disabled")
+                    entries.append(pm.disabled(name, pm.I_BOT, T("m_bot")))
+        return entries
 
     def show_menu(self, e):
-        self.show_menu_at(e.x_root, e.y_root)
+        self.show_menu_at(e.x_root, e.y_root, mouse=True)
 
-    def show_menu_at(self, x, y, from_tray=False):
-        self.fill_players_menu()
-        if from_tray:
-            # Sans fenetre au premier plan, le menu ne se fermerait pas en cliquant a cote
-            self.layer.u.SetForegroundWindow.argtypes = [ctypes.c_void_p]
-            self.layer.u.SetForegroundWindow(self.layer.hwnd)
-        # Sous Windows, tk_popup ne rend la main qu'une fois le menu ferme
-        with self.behind():
-            try:
-                self.menu.tk_popup(x, y)
-            finally:
-                self.menu.grab_release()
+    def open_menu_from_game(self):
+        """Menu ouvert au clavier (Ctrl+Maj+M), a cote de l'overlay : dans le jeu le
+        curseur est cache. A la fermeture, on rend la main au jeu."""
+        if self._dragging:
+            return
+        if self.popup.is_open:
+            self.popup.close()
+            return
+        game = self.screens.game_hwnd
+        u = self.layer.u
+        u.GetForegroundWindow.restype = ctypes.c_void_p
+        from_game = bool(game) and u.GetForegroundWindow() == game
+        if self.hidden:
+            self.toggle_hidden()
+        self.grace_until = time.monotonic() + 2
+        # Windows refuse le premier plan a une appli en arriere-plan, sauf juste apres
+        # une touche : un appui sur Alt leve ce verrou
+        press_key(0x12)
+
+        def closed(ran):
+            if from_game:
+                self.root.after(150, lambda: self._back_to_game(game))
+
+        self.show_menu_at(self.root.winfo_rootx(), self.root.winfo_rooty(), keyboard=True, on_close=closed)
+
+    def _back_to_game(self, game):
+        u = self.layer.u
+        u.GetForegroundWindow.restype = ctypes.c_void_p
+        fg = u.GetForegroundWindow()
+        # Une fenetre ouverte depuis le menu (parametres, historique...) garde la main
+        if fg in (None, self.layer.hwnd, self.shell.hwnd):
+            u.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+            u.SetForegroundWindow(game)
+
+    def show_menu_at(self, x, y, keyboard=False, mouse=False, on_close=None):
+        if self.popup.is_open:
+            self.popup.close()
+            return
+        if mouse and time.monotonic() - self.popup.closed_at < 0.3:
+            return  # ce clic vient de fermer le menu : on ne le rouvre pas
+        self._behind = True  # l'overlay ne repasse pas devant le menu et ne bouge pas au survol
+
+        def closed(ran):
+            self._behind = False
+            self.root.lift()
+            self.on_hover()
+            if on_close:
+                on_close(ran)
+
+        self.popup.open(self.menu_main, x, y, on_close=closed, keyboard=keyboard)
 
     def quit(self):
         self.store.save()
