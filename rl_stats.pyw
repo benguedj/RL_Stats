@@ -4,18 +4,17 @@ Utilise la Stats API officielle de Rocket League (socket TCP local, port 49123),
 autorisee par Psyonix : aucune injection, aucun risque avec l'anti-cheat.
 """
 
+import array
 import contextlib
 import ctypes
 import hashlib
 import io
 import json
-import math
 import os
 import queue
 import re
 import shutil
 import socket
-import struct
 import subprocess
 import sys
 import threading
@@ -39,6 +38,7 @@ import achievements  # noqa: E402
 import designs  # noqa: E402
 import i18n  # noqa: E402
 import popup_menu as pm  # noqa: E402
+import synth  # noqa: E402
 from discord_rpc import DiscordPresence  # noqa: E402
 from history import History  # noqa: E402
 from i18n import T  # noqa: E402
@@ -61,7 +61,7 @@ DATA_FILE = os.path.join(DATA_DIR, "stats.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "matches.json")
 LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
 
-APP_VERSION = "1.3.4"
+APP_VERSION = "1.4.0"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
 # "Application ID" Discord (https://discord.com/developers/applications) : vide = statut Discord indisponible
@@ -440,43 +440,64 @@ class Screens:
 # --------------------------------------------------------------------------
 
 class Sounds:
-    """Petits jingles synthetises (pas de fichier a fournir), joues sans bloquer."""
+    """Sons synthetises par synth.py (pas de fichier a fournir), joues sans bloquer,
+    ou un fichier MP3 / WAV choisi par le joueur (lu par MCI, le lecteur de Windows)."""
 
-    NOTES = {"w": [(523.25, 0.09), (659.25, 0.09), (783.99, 0.09), (1046.5, 0.40)],
-             "l": [(392.0, 0.17), (329.63, 0.17), (261.63, 0.55)]}
+    ALIAS = "rlstats_sound"
 
     def __init__(self, folder):
         self.folder = folder
-        self.volume = None
+        self.samples = {}  # son -> echantillons, calcules une fois (prepare, en arriere-plan)
+        self.written = {}  # son -> volume du fichier .wav ecrit
+        self.lock = threading.Lock()
+        mci = ctypes.windll.winmm.mciSendStringW
+        mci.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.UINT, ctypes.c_void_p]
+        self.mci = lambda cmd: mci(cmd, None, 0, None)  # 0 = ok
 
-    def _synth(self, notes, volume):
-        rate = 44100
-        frames = bytearray()
-        amp = 32767 * 0.55 * volume / 100
-        for freq, dur in notes:
-            n = int(rate * dur)
-            for i in range(n):
-                t = i / rate
-                env = min(1.0, t / 0.005) * math.exp(-t * (3.0 if dur > 0.3 else 7.0))
-                v = math.sin(2 * math.pi * freq * t) + 0.25 * math.sin(4 * math.pi * freq * t)
-                frames += struct.pack("<h", int(amp * env * v / 1.25))
-        buf = io.BytesIO()
-        with wave.open(buf, "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(rate)
-            w.writeframes(bytes(frames))
-        return buf.getvalue()
+    def prepare(self):
+        """Calcule tous les sons (thread) : le premier but ou la premiere victoire ne bloque pas l'overlay."""
+        for kind in synth.SOUNDS:
+            self._samples(kind)
 
-    def play(self, kind, volume):
+    def _samples(self, kind):
+        with self.lock:
+            if kind not in self.samples:
+                self.samples[kind] = synth.render(kind)
+            return self.samples[kind]
+
+    def _wav(self, kind, volume):
+        path = os.path.join(self.folder, f"{kind}.wav")
+        if self.written.get(kind) != volume or not os.path.isfile(path):
+            gain = 32767 * volume / 100
+            data = array.array("h", (int(v * gain) for v in self._samples(kind)))
+            os.makedirs(self.folder, exist_ok=True)
+            with wave.open(path, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(synth.RATE)
+                w.writeframes(data.tobytes())
+            self.written[kind] = volume
+        return path
+
+    def play_file(self, path, volume):
+        """Joue un fichier MP3 / WAV. Renvoie False s'il n'a pas pu etre ouvert."""
+        self.mci(f"close {self.ALIAS}")
+        if not os.path.isfile(path) or self.mci(f'open "{path}" type mpegvideo alias {self.ALIAS}'):
+            log(f"Son impossible a lire : {path}")
+            return False
+        self.mci(f"setaudio {self.ALIAS} volume to {int(volume) * 10}")  # 0 a 1000
+        self.mci(f"play {self.ALIAS} from 0")
+        return True
+
+    def stop_file(self):
+        self.mci(f"close {self.ALIAS}")
+
+    def play(self, kind, volume, custom=None):
+        if custom and self.play_file(custom, volume):
+            return
+        self.stop_file()
         try:
-            if volume != self.volume:
-                os.makedirs(self.folder, exist_ok=True)
-                for k, notes in self.NOTES.items():
-                    with open(os.path.join(self.folder, f"{k}.wav"), "wb") as f:
-                        f.write(self._synth(notes, volume))
-                self.volume = volume
-            winsound.PlaySound(os.path.join(self.folder, f"{kind}.wav"),
+            winsound.PlaySound(self._wav(kind, volume),
                                winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
         except (OSError, RuntimeError) as e:
             log(f"Son impossible : {e!r}")
@@ -705,7 +726,8 @@ class Store:
         "size": 1.0, "hud_scale": 100, "processed": [],
         "lang": "auto", "monitor": 0, "counter": "mode", "goal": 0,
         "win_color": "#2ee66b", "loss_color": "#ff4d4d", "opacity": 100, "animations": True,
-        "sounds": False, "volume": 60, "summary": True, "summary_time": 12, "met_alert": True,
+        "sounds": False, "volume": 60, "custom_sounds": {}, "summary": True, "summary_time": 12, "met_alert": True,
+        "goal_alert": True, "session_timer": True,
         "obs": False, "hotkeys": True, "tray": True, "taskbar": True,
         "auto_hide": True, "resume_session": True, "check_updates": True, "tilt_alert": True, "discord": False,
         "session_saved": {}, "achievements": {},
@@ -859,10 +881,11 @@ STATE_STATS = {"Goals": "goals", "Assists": "assists", "Saves": "saves", "Shots"
 class MatchTracker:
     """Determine l'equipe du joueur, le mode, les stats et le resultat de chaque match."""
 
-    def __init__(self, store, on_result, on_start):
+    def __init__(self, store, on_result, on_start, on_goal):
         self.store = store
         self.on_result = on_result
-        self.on_start = on_start
+        self.on_start = on_start  # a chaque coup d'envoi d'un match en ligne
+        self.on_goal = on_goal  # (equipe qui marque, pseudo du buteur ou "")
         self.last_players = []  # joueurs du dernier match vu (garde apres la fin du match)
         self.ids = {}  # pseudo -> PrimaryId (evenements PlayerJoined)
         self.reset(None)
@@ -881,13 +904,14 @@ class MatchTracker:
         self.team_size = 0
         self.created = time.time()  # debut du match (pour la duree de session)
         self.started = False
-        self.announced = False
         self.finished = False
         self.goal_spots = []  # [x, z] ou mes buts entrent dans la cage
         self.kick = None  # engagement en cours : {"t": instant du premier contact}
         self.kickoffs = [0, 0, 0]  # gagnes, perdus, neutres
         self.last_ball = None  # derniere position connue du ballon
         self.boost = [0, 0, 0, 0]  # echantillons, somme du boost, a 0 boost, supersonique
+        self.boost_missing = 0  # echantillons ou le jeu n'a pas envoye la valeur du boost
+        self.boost_min = None
 
     @property
     def mode(self):
@@ -910,8 +934,7 @@ class MatchTracker:
         elif event == "RoundStarted":
             self.started = True
             self.kick = {"t": None}  # coup d'envoi : on attend le premier contact
-            if self.guid and not self.announced and self.players:
-                self.announced = True
+            if self.guid and self.players:
                 self.on_start(self)
         elif event == "BallHit":
             loc = (data.get("Ball") or {}).get("Location")
@@ -927,12 +950,18 @@ class MatchTracker:
                     self.mvp.add(name)
         elif event == "GoalScored":
             scorer = data.get("Scorer") or {}
-            if scorer.get("TeamNum") is not None:
-                self.team_goals[scorer["TeamNum"]] += 1
+            if not scorer.get("Name") and not data.get("GoalSpeed"):
+                return  # a la fin de chaque replay, le jeu renvoie un faux but (sans buteur ni vitesse)
+            spot = data.get("ImpactLocation") or {}
+            team = scorer.get("TeamNum") if scorer.get("Name") else None
+            if team is None and spot.get("Y"):  # but contre son camp : cage orange (Y > 0) = point pour les bleus
+                team = 0 if float(spot["Y"]) > 0 else 1
+            if team is not None:
+                self.team_goals[team] += 1
+                self.on_goal(team, scorer.get("Name", ""))
             if scorer.get("Name") and data.get("GoalSpeed"):
                 name = scorer["Name"]
                 self.goal_speeds[name] = max(self.goal_speeds.get(name, 0), float(data["GoalSpeed"]))
-            spot = data.get("ImpactLocation") or {}
             if (scorer.get("Name", "").strip().lower() == self.my_name().strip().lower()
                     and any(spot.get(a) for a in ("X", "Y", "Z"))):
                 # Vue depuis le terrain : X est inverse selon la cage (bleue en Y < 0, orange en Y > 0)
@@ -996,12 +1025,19 @@ class MatchTracker:
         """Boost du joueur (envoye par le jeu pour notre equipe uniquement), 10 fois par seconde."""
         me = self.my_name().strip().lower()
         p = next((p for p in players if p.get("Name", "").strip().lower() == me), None)
-        if p is None or "Boost" not in p:
+        if p is None:
             return
+        if "Boost" not in p:
+            # Les valeurs nulles peuvent manquer : sans boost, la cle disparait. On ne compte 0 que si
+            # le jeu envoie bien le boost de notre equipe (sinon on n'a simplement pas l'info).
+            if not any("Boost" in q for q in players if q.get("TeamNum") == p.get("TeamNum")) and not self.boost[0]:
+                return
+            self.boost_missing += 1
         boost = float(p.get("Boost") or 0)
+        self.boost_min = boost if self.boost_min is None else min(self.boost_min, boost)
         self.boost[0] += 1
         self.boost[1] += boost
-        self.boost[2] += boost <= 0
+        self.boost[2] += boost < 1  # la jauge affiche 0 en dessous de 1
         self.boost[3] += bool(p.get("bSupersonic"))
 
     def _check_kickoff(self):
@@ -1059,8 +1095,10 @@ class MatchTracker:
             stats["kickoffs"] = list(self.kickoffs)
         n, total, zero, superso = self.boost
         if n >= 100:  # au moins ~10 s de donnees
+            # "n" : enregistre depuis la correction du temps a 0 boost (avant, "zero" valait toujours 0)
             stats["boost"] = {"avg": round(total / n, 1), "zero": round(zero * 100 / n, 1),
-                              "superso": round(superso * 100 / n, 1)}
+                              "superso": round(superso * 100 / n, 1), "n": n}
+        log(f"Boost : {n} echantillons, min {self.boost_min}, {zero} a 0, {self.boost_missing} sans valeur")
         return stats
 
     def _finish(self, guid, winner, forfeit=False):
@@ -1186,6 +1224,14 @@ class LayeredWindow:
             u.ReleaseDC(None, screen)
 
 
+def place_tk_window(win, img, x, y):
+    """Taille et position Tk d'une fenetre transparente, appliquees tout de suite. Tk applique sa
+    geometrie en differe : s'il passe apres UpdateLayeredWindow, il remet la fenetre a son ancienne
+    position (les pastilles se retrouvaient en haut a gauche de l'ecran)."""
+    win.geometry(f"{img.width}x{img.height}+{x}+{y}")
+    win.update_idletasks()
+
+
 def empty_image():
     return designs.Image.new("RGBA", (1, 1), (0, 0, 0, 0))
 
@@ -1193,8 +1239,9 @@ def empty_image():
 class SummaryCard:
     """Carte de resume affichee au-dessus de l'overlay apres un match (clic = fermer)."""
 
-    def __init__(self, root):
+    def __init__(self, root, on_change=lambda: None):
         self.root = root
+        self.on_change = on_change  # appele quand la carte apparait ou disparait
         self.top = tk.Toplevel(root)
         self.top.overrideredirect(True)
         self.top.attributes("-topmost", True)
@@ -1214,8 +1261,10 @@ class SummaryCard:
 
     def show(self, img, x, y, seconds):
         self._cancel()
+        self.img = img
+        self.on_change()
         self.img, self.pos = img, (x, y)
-        self.top.geometry(f"{img.width}x{img.height}+{x}+{y}")
+        place_tk_window(self.top, img, x, y)
         self.top.lift()
         self._fade(+1, seconds)
 
@@ -1224,6 +1273,7 @@ class SummaryCard:
         if self.alpha == 0:
             self.layer.show(empty_image(), *self.pos)
             self.img = None
+            self.on_change()
             return
         self.layer.show(self.img, *self.pos, alpha=self.alpha)
         if direction > 0 and self.alpha == 255:
@@ -1241,6 +1291,34 @@ class SummaryCard:
         return self.img is not None
 
 
+class FloatingImage:
+    """Image dans sa propre fenetre transparente, a cote de l'overlay (clic = on_click)."""
+
+    def __init__(self, root, on_click):
+        self.top = tk.Toplevel(root)
+        self.top.overrideredirect(True)
+        self.top.attributes("-topmost", True)
+        self.top.geometry("1x1+0+0")
+        self.layer = LayeredWindow(self.top)
+        self.top.bind("<ButtonPress-1>", lambda e: on_click())
+        self.shown = None  # (image, x, y) affiches
+        self.layer.show(empty_image(), 0, 0)
+
+    def show(self, img, x, y):
+        # Comparaison par identite : == sur deux images Pillow compare tous leurs pixels
+        if self.shown is None or self.shown[0] is not img or self.shown[1:] != (x, y):
+            self.shown = (img, x, y)
+            place_tk_window(self.top, img, x, y)
+            self.top.lift()
+            self.layer.show(img, x, y)
+
+    def hide(self):
+        if self.shown:
+            _, x, y = self.shown
+            self.shown = None
+            self.layer.show(empty_image(), x, y)  # sur place : Tk garde la meme position que Windows
+
+
 class Overlay:
     def __init__(self, lock):
         self.store = Store()
@@ -1254,7 +1332,7 @@ class Overlay:
         self.connected = False
         self.notice = None  # cle de texte i18n
         self.banner = None  # (texte, couleur, "w"|"l"|None) pendant quelques secondes
-        self.anim = None  # designs.MatchAnimation en cours
+        self.anim = None  # animation de fin de match ou de but en cours (designs.animation)
         self._anim_job = None
         self._banner_job = None
         self._geom = None
@@ -1271,19 +1349,25 @@ class Overlay:
         self.auto_hidden = False  # masque car le jeu est ferme ou reduit
         self.grace_until = time.monotonic() + 8  # visible quelques secondes au lancement
         self.banner_queue = []
-        self.session_start = None  # heure du premier match de la session
+        self.session_start = None  # debut de la session : lancement du jeu, connexion ou premier match
         self.break_hours = 0  # alertes "pause" deja affichees
         self.update_info = None  # (version, url, fichiers) si une mise a jour existe
         self.updating = False
+        self.met_players = []  # adversaires deja croises dans le match en cours : [(pseudo, V, D)]
+        self.met_dismissed = None  # match pour lequel les pastilles ont ete fermees d'un clic
+        self.met_preview = False  # pastilles d'apercu (menu Apparence) affichees
+        self._met_preview_job = None
+        self._met_img = None  # (cle, image) du dernier rendu des pastilles
         self.restore_session()
         if not self.store["achievements"] and self.history.matches:
             # Premiere version avec trophees : ceux deja merites sont acquis sans annonce
             self.store["achievements"] = {a: time.time() for a in achievements.unlocked(self.history.matches)}
 
         self.q = queue.Queue()
-        self.tracker = MatchTracker(self.store, self.add_result, self.on_match_start)
+        self.tracker = MatchTracker(self.store, self.add_result, self.on_match_start, self.on_goal)
         self.screens = Screens()
         self.sounds = Sounds(os.path.join(DATA_DIR, "sounds"))
+        threading.Thread(target=self.sounds.prepare, daemon=True).start()
         self.obs = ObsServer(log)
 
         enable_dpi_awareness()
@@ -1299,7 +1383,8 @@ class Overlay:
         self.shell.start()
         self.shell.ready.wait(2)
         self.layer = LayeredWindow(self.root)
-        self.card = SummaryCard(self.root)
+        self.card = SummaryCard(self.root, lambda: self.place_met_chips())
+        self.met_card = FloatingImage(self.root, self.dismiss_met)
         self.viewport = self.compute_viewport()
 
         self.root.bind("<ButtonPress-1>", self.on_press)
@@ -1333,6 +1418,7 @@ class Overlay:
         self.root.after(300, self.check_focus)
         self.root.after(2000, self.keep_on_top)
         self.root.after(60000, self.check_play_time)
+        self.root.after(1000, self.tick_clock)
 
     def _accept_wakeups(self, lock):
         # Relancer l'application alors qu'elle tourne deja = reafficher l'overlay
@@ -1389,8 +1475,11 @@ class Overlay:
         elif key == "discord":
             self.update_presence()
             return
-        elif key in ("volume", "sounds", "summary", "summary_time", "met_alert", "tilt_alert", "resume_session",
-                     "check_updates"):
+        elif key == "met_alert":
+            self.update_met_chips()
+            return
+        elif key in ("volume", "sounds", "summary", "summary_time", "tilt_alert", "resume_session", "check_updates",
+                     "goal_alert"):
             return  # pris en compte au prochain match, rien a redessiner
         self.draw()
 
@@ -1405,7 +1494,36 @@ class Overlay:
             self.hotkeys = None
 
     def play_sound(self, kind):
-        self.sounds.play(kind, self.store["volume"])
+        custom = self.store["custom_sounds"].get(kind) or {}
+        self.sounds.play(kind, self.store["volume"], custom.get("file"))
+
+    def set_custom_sound(self, kind, path):
+        """Son choisi par le joueur (copie dans le dossier des donnees), ou None = son par defaut.
+        Renvoie False si le fichier ne peut pas etre lu."""
+        self.sounds.stop_file()  # libere le fichier en cours de lecture
+        folder = self.sounds.folder
+        sounds = dict(self.store["custom_sounds"])
+        old = (sounds.pop(kind, None) or {}).get("file")
+        if old:
+            with contextlib.suppress(OSError):
+                os.remove(old)
+        if path:
+            dest = os.path.join(folder, f"custom_{kind}{os.path.splitext(path)[1].lower()}")
+            try:
+                os.makedirs(folder, exist_ok=True)
+                shutil.copyfile(path, dest)
+            except OSError as e:
+                log(f"Copie du son impossible : {e}")
+                self.store["custom_sounds"] = sounds
+                return False
+            if not self.sounds.play_file(dest, self.store["volume"]):  # fait entendre le son choisi
+                with contextlib.suppress(OSError):
+                    os.remove(dest)
+                self.store["custom_sounds"] = sounds
+                return False
+            sounds[kind] = {"file": dest, "name": os.path.basename(path)}
+        self.store["custom_sounds"] = sounds
+        return True
 
     def copy_obs_url(self):
         self.root.clipboard_clear()
@@ -1493,9 +1611,31 @@ class Overlay:
     def total_wins(self):
         return sum(v[0] for v in self.session.values())
 
+    def session_clock(self):
+        """Temps depuis le debut de la session, en direct ("1:23:45", "42:07"), ou None."""
+        if not (self.store["session_timer"] and self.session_start):
+            return None
+        m, sec = divmod(max(0, int(time.time() - self.session_start)), 60)
+        h, m = divmod(m, 60)
+        return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
+
+    def tick_clock(self):
+        """Fait avancer le chrono chaque seconde : seul le texte du sous-titre est redessine, colle sur
+        le dernier rendu de l'overlay (pas pendant un glisser : la fenetre suit la souris)."""
+        sub = self.sub_label()
+        if self.session_clock() and sub != self._state["sub"] and not self._dragging:
+            self._state["sub"] = sub
+            _, ax, ay, buttons = self._base
+            self._base = (designs.paste_sub(self._bare, self._slot, sub), ax, ay, buttons)
+            self.present()
+            self.publish(self._state)
+        self.root.after(1000 - int(time.time() * 1000) % 1000 + 5, self.tick_clock)  # cale sur la seconde
+
     def sub_label(self):
+        """Mode et nombre de matchs ; le chrono de session remplace le nombre de matchs (deja
+        lisible : victoires + defaites)."""
         w, l = self.counts()
-        label = i18n.matches_label(w + l)
+        label = self.session_clock() or i18n.matches_label(w + l)
         if self.store["counter"] == "mode" and self.current_mode:
             return f"{self.current_mode.upper()} · {label}"
         return label
@@ -1526,8 +1666,11 @@ class Overlay:
                  "sub": self.sub_label()}
         k = self.design_k()
         render = self.renderer()[1]
-        img, (ax, ay), buttons = render(state, k, hover=self.hover)
-        self._base = (img, ax, ay, buttons)
+        # Rendu sans le sous-titre, garde de cote : le chrono n'aura qu'a y recoller son texte
+        slot = []
+        bare, (ax, ay), buttons = render(dict(state, sub_slot=slot), k, hover=self.hover)
+        self._state, self._bare, self._slot = state, bare, slot
+        self._base = (designs.paste_sub(bare, slot, state["sub"]), ax, ay, buttons)
         self.present()
         self.publish(state)
         self.shell.set_tip(T("tray_tip", w=w, l=l))
@@ -1567,15 +1710,16 @@ class Overlay:
         self.pos = (x, y)
         geom = f"{img.width}x{img.height}+{x}+{y}"
         if geom != self._geom:
-            self.root.geometry(geom)
+            place_tk_window(self.root, img, x, y)
             self._geom = geom
         self.layer.show(img, x, y)
+        self.place_met_chips()
 
     def refresh(self):
         self.draw()
 
     def play_animation(self, kind):
-        self.anim = designs.MatchAnimation(kind, self.design_k())
+        self.anim = designs.animation(kind, self.design_k())
         if not self._anim_job:
             self._anim_tick()
 
@@ -1732,15 +1876,95 @@ class Overlay:
         info = info or self.last_summary
         if not info or self.hidden:
             return
+        img = designs.render_summary(info, self.design_k(), T)
+        self.card.show(img, *self.beside_overlay(img), self.store["summary_time"])
+
+    def beside_overlay(self, img):
+        """Position d'une carte a cote de l'overlay : a sa gauche pour la forme verticale (collee au bord
+        droit de l'ecran), au-dessus pour les autres. Reste dans la zone du jeu."""
         k = self.design_k()
-        img = designs.render_summary(info, k, T)
         base, ax, ay, _ = self._base
         sx, sy = self.screen_anchor()
         left, top = sx - ax, sy - ay
         vx, vy, vw, vh = self.viewport
-        x = round(min(max(left + base.width / 2 - img.width / 2, vx), vx + vw - img.width))
-        y = round(max(top + 20 * k - img.height, vy))
-        self.card.show(img, x, y, self.store["summary_time"])
+        if self.renderer()[2] == "edge":
+            x, y = left + 20 * k - img.width, top + base.height / 2 - img.height / 2
+        else:
+            x, y = left + base.width / 2 - img.width / 2, top + 20 * k - img.height
+        return (round(min(max(x, vx), vx + vw - img.width)), round(min(max(y, vy), vy + vh - img.height)))
+
+    # --- Adversaires deja croises -------------------------------------------
+
+    def update_met_chips(self, tracker=None):
+        """Adversaires du match en cours deja croises. Les coequipiers sont ignores : la Stats API ne dit
+        pas qui est dans notre groupe, et un ami serait signale a chaque match."""
+        tracker = tracker or self.tracker
+        met = []
+        team = tracker.my_team()
+        if self.store["met_alert"] and tracker.guid and not tracker.finished and team is not None:
+            for pid, name, t in tracker.others():
+                p = self.history.met(pid) if t != team else None
+                if p:
+                    met.append((p["n"], short_name(name, 14), p["with"][0] + p["against"][0],
+                                p["with"][1] + p["against"][1]))
+        self.met_players = [m[1:] for m in sorted(met, reverse=True)[:4]]
+        self.place_met_chips()
+
+    def dismiss_met(self):
+        if self.met_preview:
+            self.end_met_preview()
+            return
+        self.met_dismissed = self.tracker.guid
+        self.place_met_chips()
+
+    def preview_met(self):
+        """Apercu des pastilles pendant quelques secondes : les joueurs les plus croises, ou des exemples."""
+        ranked = sorted(self.history.players.values(), key=lambda p: -p["n"])[:3]
+        self.met_players = [(short_name(p["name"], 14), p["with"][0] + p["against"][0], p["with"][1] + p["against"][1])
+                            for p in ranked] or [("PLAYER ONE", 3, 1), ("PLAYER TWO", 0, 2)]
+        self.met_preview = True
+        self.card.hide()  # meme place que la carte de fin de match : les pastilles s'affichent quand elle est partie
+        if self._met_preview_job:
+            self.root.after_cancel(self._met_preview_job)
+        self._met_preview_job = self.root.after(6000, self.end_met_preview)
+        self.place_met_chips()
+
+    def end_met_preview(self):
+        if self._met_preview_job:
+            self.root.after_cancel(self._met_preview_job)
+            self._met_preview_job = None
+        if self.met_preview:
+            self.met_preview = False
+            self.update_met_chips()  # retour aux vrais adversaires s'il y a un match en cours
+
+    def place_met_chips(self):
+        dismissed = not self.met_preview and self.tracker.guid and self.met_dismissed == self.tracker.guid
+        if not self.met_players or self.hidden or self.auto_hidden or self.card.visible or dismissed:
+            self.met_card.hide()
+            return
+        edge = self.renderer()[2] == "edge"
+        key = (tuple(self.met_players), self.design_k(), edge, i18n.lang())
+        if not self._met_img or self._met_img[0] != key:
+            img = designs.render_met_chips(self.met_players, self.design_k(), T("met_title"),
+                                           (T("m_w"), T("m_l")), "right" if edge else "center")
+            self._met_img = (key, img)
+        img = self._met_img[1]
+        self.met_card.show(img, *self.met_position(img))
+
+    def met_position(self, img):
+        """Pastilles au-dessus de l'overlay (en dessous s'il n'y a pas la place). Pour la forme verticale,
+        elles sont alignees sur le bord droit de l'ecran ; le resume de fin de match prend la gauche."""
+        if self.renderer()[2] != "edge":
+            return self.beside_overlay(img)
+        k = self.design_k()
+        base, ax, ay, _ = self._base
+        sx, sy = self.screen_anchor()
+        left, top = sx - ax, sy - ay
+        vx, vy, vw, vh = self.viewport
+        x, y = left + base.width - img.width, top - img.height + 10 * k
+        if y < vy:
+            y = top + base.height - 10 * k
+        return (round(min(max(x, vx), vx + vw - img.width)), round(min(max(y, vy), vy + vh - img.height)))
 
     # --- Menu ---------------------------------------------------------------
 
@@ -1798,6 +2022,12 @@ class Overlay:
                     color=self.store["win_color"], keep_open=True),
             pm.item(T("m_defeat"), lambda: self.celebrate(False, preview=True), pm.I_PLAY,
                     color=self.store["loss_color"], keep_open=True),
+            pm.item(T("m_goal_for"), lambda: self.goal_alert(True, T("goal_me")), pm.I_PLAY,
+                    color=self.store["win_color"], keep_open=True),
+            pm.item(T("m_goal_against"), lambda: self.goal_alert(False, T("goal_against")), pm.I_PLAY,
+                    color=self.store["loss_color"], keep_open=True),
+            pm.item(T("m_summary_card"), self.preview_summary, pm.I_SUMMARY, keep_open=True),
+            pm.item(T("m_met_preview"), self.preview_met, pm.I_PEOPLE, keep_open=True),
         ]
 
     def set_size(self, value):
@@ -1834,6 +2064,9 @@ class Overlay:
                         self.connected = payload
                         if payload:
                             self.notice = None
+                            if not self.session_start:
+                                self.session_start = time.time()  # le chrono part des que le jeu est la
+                                self.save_session()
                         self.refresh()
                         self.update_presence()
                 elif kind == "update":
@@ -1865,6 +2098,9 @@ class Overlay:
                         self.tracker.handle(*payload)
                     except Exception as e:  # ne jamais tuer l'overlay sur un message inattendu
                         log(f"Erreur sur {payload[0]}: {e!r}")
+                    if self.met_players and not self.met_preview and (not self.tracker.guid or self.tracker.finished):
+                        self.met_players = []
+                        self.place_met_chips()
         except queue.Empty:
             pass
         self.root.after(100, self.poll)
@@ -1897,6 +2133,10 @@ class Overlay:
         self.root.after(15000, self.check_config)
 
     def keep_on_top(self):
+        if not self.session_start and self.screens.game_hwnd:  # Rocket League vient d'etre lance
+            self.session_start = time.time()
+            self.save_session()
+            self.draw()
         if not getattr(self, "_behind", False):
             self.root.attributes("-topmost", True)
             self.root.lift()
@@ -1920,21 +2160,41 @@ class Overlay:
             self.root.lift()
 
     def on_match_start(self, tracker):
-        """Premier coup d'envoi d'un match en ligne : mode connu, joueurs deja croises."""
+        """Chaque coup d'envoi d'un match en ligne : mode connu, adversaires deja croises (un joueur
+        peut en remplacer un autre en cours de match)."""
         if tracker.mode and tracker.mode != self.current_mode:
             self.current_mode = tracker.mode
             self.refresh()
-        if not self.store["met_alert"]:
+        self.update_met_chips(tracker)
+
+    def on_goal(self, team, scorer):
+        """Bandeau et petite animation a chaque but : vert pour notre equipe, rouge pour l'adversaire."""
+        mine = self.tracker.my_team()
+        if not self.store["goal_alert"] or mine is None or self.tracker.finished:
             return
-        best = None
-        for pid, name, _ in tracker.others():
-            p = self.history.met(pid)
-            if p and (best is None or p["n"] > best[1]["n"]):
-                best = (name, p)
-        if best:
-            name, p = best
-            self.show_banner(T("met_before", name=short_name(name, 12), w=p["with"][0] + p["against"][0],
-                               l=p["with"][1] + p["against"][1]), designs.AMBER, None)
+        ours = int(team) == int(mine)
+        if not ours:
+            text = T("goal_against")
+        elif scorer.strip().lower() == self.tracker.my_name().strip().lower():
+            text = T("goal_me")
+        else:
+            text = T("goal_team", name=short_name(scorer, 14)) if scorer else T("goal_us")
+        self.goal_alert(ours, text)
+
+    def goal_alert(self, ours, text):
+        kind = "gw" if ours else "gl"
+        self.show_banner(text, designs.GREEN if ours else designs.RED, "w" if ours else "l", 3)
+        if self.store["animations"]:
+            self.play_animation(kind)
+        if self.store["sounds"]:
+            self.play_sound(kind)
+
+    def preview_summary(self):
+        """Carte de fin de match : celle du dernier match, ou un exemple."""
+        self.show_summary(self.last_summary or {
+            "won": True, "mode": "2v2", "score": [3, 1],
+            "me": {"score": 540, "goals": 2, "assists": 1, "saves": 2, "shots": 4, "demos": 1, "mvp": True,
+                   "fastest": 121.0}})
 
     def add_result(self, won, info):
         mode = info.get("mode") or "?"
@@ -2015,7 +2275,7 @@ class Overlay:
     def reset_session(self):
         self.session = {}
         self.streak = 0
-        self.session_start = None
+        self.session_start = time.time() if self.connected or self.screens.game_hwnd else None
         self.break_hours = 0
         self.save_session()
         self.update_presence()

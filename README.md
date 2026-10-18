@@ -38,16 +38,16 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 | **Per-mode stats** | 1v1, 2v2, 3v3 and 4v4 are counted separately; the overlay shows the current mode (or all modes). |
 | **Post-match summary** | Score, goals, assists, saves, shots, demos, accuracy, fastest goal, MVP badge. |
 | **History & progress** | Every game is saved: daily win-rate chart, best streak, MVPs, averages, game list, CSV export. |
-| **Players met before** | Warns you when you meet a player you already played with or against, with your record. |
-| **Session goal** | e.g. *10 wins tonight*, with progress shown on the overlay. |
-| **Animations & sounds** | Confetti on wins, shake on losses, optional sounds. |
+| **Opponents met before** | During the game, small chips next to the overlay show the opponents you already played, with your record. Teammates are left out (the game doesn't say who is in your party). |
+| **Session goal & timer** | e.g. *10 wins tonight*, with progress shown on the overlay, and how long you've been playing. |
+| **Animations & sounds** | Confetti on wins, shake on losses, a short alert on every goal scored or conceded, optional sounds (built-in or your own MP3 / WAV). |
 | **Customization** | 4 styles (scoreboard / minimal × curved / straight), size, colors, opacity. |
 | **Multi-monitor & ultrawide** | Follows the game window on any screen, any resolution, windowed or borderless. |
 | **Streamer mode** | A local page to add as an **OBS browser source**. Off by default. |
 | **Tray icon & taskbar button** | Click to hide / show the overlay, right-click for the menu. |
 | **Trophies & records** | 26 trophies (first flip reset, aerial goal, hat trick, 140 km/h goal, 10 win streak…) and personal records, announced on the overlay. |
 | **Session card** | One click copies an image of your session to the clipboard, ready to paste in Discord. |
-| **Advanced stats** | Kickoffs won, average boost, time at 0 boost, supersonic time, map of where your goals go in. |
+| **Advanced stats** | Kickoffs won, average boost, time at 0 boost, supersonic time, map of where your goals go in, for a period or a single game. |
 | **Discord status** | Shows your mode, session score and streak on your Discord profile (Rich Presence, off by default). |
 | **Tilt alert** | Suggests a break after 3 losses in a row or 2 hours of play (can be turned off). |
 | **Smart display** | Hides itself when the game is closed or minimized, resumes your session if restarted within 2 h, can start with Windows and stay hidden until the game starts. |
@@ -127,6 +127,7 @@ build.bat
 | `history.py` | Match history (`matches.json`) and statistics |
 | `achievements.py` | Trophies and personal records |
 | `discord_rpc.py` | Discord status (Rich Presence) |
+| `synth.py` | Built-in sounds (win, loss, goals), synthesized: no audio file shipped |
 | `ui_windows.py` | Settings and History windows (Tkinter) |
 | `popup_menu.py` | Overlay menu (dark panel, keyboard navigation) |
 | `obs_server.py` | Local page for OBS (streamer mode) |
@@ -191,10 +192,11 @@ Rocket League is a trademark of Psyonix LLC.*
 3. Dans les options vidéo du jeu, choisis **Fenêtré sans bordure**.
 
 **Fonctionnalités** : compteur par mode (1v1, 2v2, 3v3, 4v4), résumé après chaque match, historique
-et graphique de progression, joueurs déjà croisés, objectif de session, animations et sons,
+et graphique de progression, adversaires déjà croisés (affichés pendant le match), objectif et chrono de session,
+alerte à chaque but, animations et sons (intégrés ou tes propres MP3 / WAV),
 personnalisation (designs, couleurs, opacité), multi-écrans et ultra-larges, mode streamer (OBS),
 icône près de l'horloge, trophées et records, carte de session à coller sur Discord, statut Discord, stats avancées
-(engagements, boost, carte des buts), alerte tilt, masquage auto quand le jeu est fermé, reprise de session,
+(engagements, boost, carte des buts, par période ou par match), alerte tilt, masquage auto quand le jeu est fermé, reprise de session,
 démarrage avec Windows, notification des mises à jour, français / anglais.
 
 **Utilisation** : bouton `☰` au survol de l'overlay, clic droit (ou sur l'icône près de l'horloge) pour le menu,

@@ -14,9 +14,10 @@ pour les formes verticales, c'est le milieu du bord droit, colle au bord de l'ec
 import math
 import os
 import random
+import re
 import time
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 FONT_FILE = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "bahnschrift.ttf")
 SS = 3  # sur-echantillonnage
@@ -90,6 +91,20 @@ def text_img(parts, shear=0.18):
     return img.crop(img.getbbox() or (0, 0, 1, 1))
 
 
+_blurs = {}
+
+
+def _blur_cached(shadow, radius):
+    """Ombre floutee, gardee en cache : le flou est la partie la plus lente d'un rendu, et l'ombre ne
+    change presque jamais d'un rendu a l'autre (survol, bandeaux, nouveaux matchs...)."""
+    key = (shadow.size, radius, hash(shadow.getchannel("A").tobytes()))
+    if key not in _blurs:
+        if len(_blurs) > 40:
+            _blurs.clear()
+        _blurs[key] = shadow.filter(ImageFilter.GaussianBlur(radius))
+    return _blurs[key]
+
+
 def paste_center(base, img, center, angle=0):
     if angle:
         img = img.rotate(angle, resample=Image.BICUBIC, expand=True)
@@ -159,6 +174,77 @@ def finish(img, k_w, k_h, opacity=1.0):
     if opacity < 1:
         a = out.getchannel("A").point(lambda v: round(v * opacity))
         out.putalpha(a)
+    return out
+
+
+_CLOCK = re.compile(r"\d+(?::\d\d){1,2}$")  # chrono de session en fin de sous-titre ("12:34", "1:02:03")
+
+
+def _stopwatch(size, color):
+    """Petite icone de chronometre (cadran, bouton, aiguille), carree, de cote `size` pixels."""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    w = max(1, round(size * 0.11))
+    r = size * 0.36
+    cx, cy = size / 2, size * 0.58
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=color, width=w)
+    d.rectangle([cx - size * 0.09, cy - r - size * 0.17, cx + size * 0.09, cy - r - size * 0.05], fill=color)
+    d.line([(cx, cy), (cx + r * 0.5, cy - r * 0.6)], fill=color, width=w)
+    return img
+
+
+def _sub_img(text, px, max_w=None):
+    """Image du sous-titre ; un chrono en fin de texte est precede d'une icone de chronometre, pour
+    qu'on comprenne que c'est le temps de session. Reduit la police jusqu'a tenir dans max_w."""
+    while True:
+        fnt = font(px, SEMI)
+        m = _CLOCK.search(text)
+        if m is None:
+            img = text_img([(text, fnt, MUTED, 0)], shear=0)
+        else:
+            clock = text_img([(m.group(), fnt, MUTED, 0)], shear=0)
+            pieces = [_stopwatch(round(clock.height * 1.35), FG), clock]
+            prefix = text[:m.start()].strip()
+            if prefix:
+                pieces.insert(0, text_img([(prefix, fnt, MUTED, 0)], shear=0))
+            gap = round(px * 0.3)
+            img = Image.new("RGBA", (sum(i.width for i in pieces) + gap * (len(pieces) - 1),
+                                     max(i.height for i in pieces)), (0, 0, 0, 0))
+            x = 0
+            for i in pieces:
+                img.alpha_composite(i, (x, (img.height - i.height) // 2))
+                x += i.width + gap
+        if not max_w or img.width <= max_w or px <= 6:
+            return img
+        px -= 1
+
+
+def _sub(img, state, px, center, opacity=1.0, max_w=None):
+    """Sous-titre (mode, matchs ou chrono). Avec state["sub_slot"] (une liste), il n'est pas dessine :
+    sa place et sa police y sont notees, et paste_sub l'ajoute ensuite. L'appli peut ainsi redessiner
+    le chrono seul chaque seconde au lieu de tout l'overlay."""
+    slot = state.get("sub_slot")
+    if slot is not None:
+        slot.append((px, max_w, center, opacity))
+        return
+    paste_center(img, _sub_img(state["sub"], px, max_w), center)
+
+
+def paste_sub(base, slot, text):
+    """Ajoute le sous-titre a un rendu fait avec state["sub_slot"] : meme place, meme police et meme
+    lissage que dans le rendu complet (le texte est dessine en sur-echantillonne puis reduit sur une
+    grille alignee sur celle du rendu). Renvoie une copie ; base sans emplacement = inchangee."""
+    if not slot:
+        return base
+    px, max_w, (cx, cy), opacity = slot[0]
+    t = _sub_img(text, px, max_w)
+    x0, y0 = round(cx - t.width / 2), round(cy - t.height / 2)  # comme paste_center
+    gx, gy = x0 - x0 % SS, y0 - y0 % SS
+    w, h = math.ceil((x0 + t.width - gx) / SS), math.ceil((y0 + t.height - gy) / SS)
+    patch = Image.new("RGBA", (w * SS, h * SS), (0, 0, 0, 0))
+    patch.alpha_composite(t, (x0 - gx, y0 - gy))
+    out = base.copy()
+    out.alpha_composite(finish(patch, w, h, opacity), (gx // SS, gy // SS))
     return out
 
 
@@ -238,7 +324,7 @@ def _arc_strip(img, info, cx, cy, s, r_in, r_out, min_half):
     shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
     ImageDraw.Draw(shadow).polygon(_annulus(cx, cy, r_in * s, (r_out + 6) * s, span[0] + 3, span[1] - 3),
                                    fill=(0, 0, 0, 150))
-    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(7 * s)))
+    img.alpha_composite(_blur_cached(shadow, 7 * s))
     ImageDraw.Draw(img).polygon(_annulus(cx, cy, r_in * s, r_out * s, *span), fill=color if filled else PANEL,
                                 outline=None if filled else EDGE, width=max(1, round(1.2 * s)))
     _arc_text(img, text, fnt, PANEL[:3] + (255,) if filled else color, cx, cy, r_mid)
@@ -254,7 +340,7 @@ def render_arc(state, k, hover=False):
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ImageDraw.Draw(shadow).polygon(_annulus(cx, cy, (R_IN - 6) * s, (R_OUT + 8) * s, A_LEFT + 4, A_RIGHT - 4),
                                    fill=(0, 0, 0, 150))
-    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(9 * s)))
+    img.alpha_composite(_blur_cached(shadow, 9 * s))
 
     d = ImageDraw.Draw(img)
     flash = state.get("flash")
@@ -281,7 +367,7 @@ def render_arc(state, k, hover=False):
     pct, total = pct_of(state)
     top_y = cy - R_OUT * s
     paste_center(img, text_img([(f"{pct}%", font(round(21 * s)), FG, 0)]), (cx, top_y + 16 * s))
-    paste_center(img, text_img([(state["sub"], font(round(10 * s), SEMI), MUTED, 0)], shear=0), (cx, top_y + 32 * s))
+    _sub(img, state, round(10 * s), (cx, top_y + 32 * s))
 
     if state.get("info"):
         _arc_strip(img, state["info"], cx, cy, s, STRIP_IN, STRIP_OUT, (STRIP_SPAN[0] - STRIP_SPAN[1]) / 2)
@@ -322,7 +408,7 @@ def render_mini_arc(state, k, hover=False):
 
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     _rounded_arc(ImageDraw.Draw(shadow), cx, cy, r0 - 4 * s, r1 + 4 * s, a0, a1, (0, 0, 0, 140))
-    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(6 * s)))
+    img.alpha_composite(_blur_cached(shadow, 6 * s))
 
     d = ImageDraw.Draw(img)
     flash = state.get("flash")
@@ -380,8 +466,7 @@ def render_score(state, k, hover=False):
     d.rectangle([cx0, top, cx1, top + bh], fill=mid, outline=EDGE, width=lw)
     pct, total = pct_of(state)
     paste_center(img, text_img([(f"{pct}%", font(round(24 * s)), FG, 0)]), ((cx0 + cx1) / 2, top + 18 * s))
-    paste_center(img, text_img([(state["sub"], font(round(11 * s), SEMI), MUTED, 0)], shear=0),
-                 ((cx0 + cx1) / 2, top + 37 * s))
+    _sub(img, state, round(11 * s), ((cx0 + cx1) / 2, top + 37 * s), opacity=0.88)
 
     rx = right - third
     d.polygon([(rx, top), (right, top), (right - slant, top + bh), (rx, top + bh)],
@@ -423,7 +508,7 @@ def render_mini(state, k, hover=False):
 
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ImageDraw.Draw(shadow).rounded_rectangle([x0, y0, x1, y1], radius=BH / 2 * s, fill=(0, 0, 0, 140))
-    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(6 * s)))
+    img.alpha_composite(_blur_cached(shadow, 6 * s))
 
     d = ImageDraw.Draw(img)
     flash = state.get("flash")
@@ -525,8 +610,7 @@ def render_vscore(state, k, hover=False):
     d.rectangle([x0, y0, xr, y1], fill=mid, outline=EDGE, width=lw)
     pct, _ = pct_of(state)
     paste_center(img, text_img([(f"{pct}%", font(round(24 * s)), FG, 0)]), (x0 + PW / 2 * s, y0 + 23 * s))
-    sub = text_img([(state["sub"], _fit_font(state["sub"], round(11 * s), SEMI, (PW - 12) * s), MUTED, 0)], shear=0)
-    paste_center(img, sub, (x0 + PW / 2 * s, y0 + 44 * s))
+    _sub(img, state, round(11 * s), (x0 + PW / 2 * s, y0 + 44 * s), opacity=0.88, max_w=(PW - 12) * s)
 
     # Defaites : coin bas-gauche biseaute, lisere rouge
     y0 = y1 + G * s
@@ -560,7 +644,7 @@ def render_mini_v(state, k, hover=False):
 
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ImageDraw.Draw(shadow).rounded_rectangle(box, radius=r, fill=(0, 0, 0, 140))
-    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(6 * s)))
+    img.alpha_composite(_blur_cached(shadow, 6 * s))
 
     d = ImageDraw.Draw(img)
     flash = state.get("flash")
@@ -739,12 +823,251 @@ class MatchAnimation:
         return out, (p, p)
 
 
+class GoalAnimation:
+    """Animations de but, volontairement differentes de celles de fin de match.
+    But marque ("gw") : eclair de lumiere qui balaie l'overlay, rayons et etincelles en etoile
+    (comme une explosion de but), petit "pop".
+    But encaisse ("gl") : un ballon arrive dans l'overlay et un filet de but, dessine par-dessus,
+    ondule depuis le point d'impact ; l'overlay recule et rougit un instant.
+    Tous les effets sont dessines par-dessus l'overlay.
+    Meme interface que MatchAnimation : frame(base) -> (image agrandie de pad, (pad, pad))."""
+
+    DURATION = {"gw": 1.5, "gl": 1.4}
+
+    def __init__(self, kind, k):
+        self.kind, self.k = kind, k
+        self.scored = kind == "gw"
+        self.pad = round(90 * k)
+        self.duration = self.DURATION[kind]
+        self.t0 = time.monotonic()
+        self.cache = None
+        self.sparks = None
+
+    def elapsed(self):
+        return time.monotonic() - self.t0
+
+    def done(self):
+        return self.elapsed() >= self.duration
+
+    def _prepare(self, base):
+        alpha = base.getchannel("A")
+        x0, y0, x1, y1 = alpha.point(lambda v: 255 if v > 100 else 0).getbbox() or (0, 0, *base.size)
+        red = Image.new("RGBA", base.size, RED[:3] + (255,))
+        red.putalpha(alpha)
+        self.solid = alpha.point(lambda v: 255 if v > 150 else 0)  # panneaux seuls, sans l'ombre autour
+        self.cache = (base, alpha, red, (x0, y0, x1, y1))
+        rnd = random.Random()
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        self.sparks = [{"a": rnd.uniform(0, 2 * math.pi), "v": rnd.uniform(220, 480) * self.k,
+                        "r": rnd.uniform(1.6, 3.2) * self.k, "color": rnd.choice((GREEN, GOLD, FG)),
+                        "delay": rnd.uniform(0, 0.12), "x": cx, "y": cy} for _ in range(26)]
+        # But encaisse : point d'impact du ballon et direction d'ou il arrive
+        self.impact = ((x0 + x1) / 2, (y0 + y1) / 2)
+        for _ in range(40):  # un point sur un panneau (pas dans le vide sous l'arc)
+            ix, iy = x0 + (x1 - x0) * rnd.uniform(0.3, 0.7), y0 + (y1 - y0) * rnd.uniform(0.25, 0.75)
+            if self.solid.getpixel((min(int(ix), base.width - 1), min(int(iy), base.height - 1))):
+                self.impact = (ix, iy)
+                break
+        self.ball_from = rnd.uniform(-2.6, -0.5)  # angle : le ballon vient d'en haut
+
+    def frame(self, base):
+        t = self.elapsed()
+        if self.cache is None or self.cache[0] is not base:
+            self._prepare(base)
+        return self._scored(base, t) if self.scored else self._conceded(base, t)
+
+    def _scaled(self, base, sc, out):
+        """Colle l'overlay (agrandi ou reduit de sc) au centre de out ; renvoie son decalage."""
+        p = self.pad
+        img = base
+        if sc != 1:
+            img = base.convert("RGBa").resize((round(base.width * sc), round(base.height * sc)),
+                                              Image.BICUBIC).convert("RGBA")
+        ox, oy = round(p + (base.width - img.width) / 2), round(p + (base.height - img.height) / 2)
+        out.alpha_composite(img, (ox, oy))
+        return img
+
+    def _scored(self, base, t):
+        k, p = self.k, self.pad
+        _, alpha, _, (x0, y0, x1, y1) = self.cache
+        W, H = base.width + 2 * p, base.height + 2 * p
+        fade = min(1.0, max(0.0, (self.duration - t) / 0.4))
+        out = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        cx, cy = p + (x0 + x1) / 2, p + (y0 + y1) / 2
+
+        # "Pop" : agrandissement bref et sec
+        self._scaled(base, 1 + 0.07 * math.sin(math.pi * t / 0.28) if t < 0.28 else 1, out)
+
+        # Eclair de lumiere en biais qui traverse l'overlay de gauche a droite
+        q = (t - 0.08) / 0.5
+        if 0 < q < 1:
+            bw = (x1 - x0) * 0.22
+            x = x0 - bw + q * (x1 - x0 + 2 * bw)
+            band = Image.new("L", base.size, 0)
+            sk = (y1 - y0) * 0.35
+            ImageDraw.Draw(band).polygon([(x, y0), (x + bw, y0), (x + bw - sk, y1), (x - sk, y1)], fill=210)
+            band = ImageChops.multiply(band.filter(ImageFilter.GaussianBlur(bw * 0.25)), alpha)
+            shine = Image.new("RGBA", base.size, (255, 255, 255, 0))
+            shine.putalpha(band)
+            out.alpha_composite(shine, (p, p))
+
+        # Rayons en etoile qui partent du centre, par-dessus l'overlay
+        q = t / 0.6
+        if q < 1:
+            fx = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            d = ImageDraw.Draw(fx)
+            reach = max(x1 - x0, y1 - y0) / 2 + p * 0.95
+            for i in range(14):
+                a = 2 * math.pi * i / 14 + 0.2
+                r0, r1 = reach * (0.25 + 0.55 * _ease_out(q)), reach * (0.45 + 0.55 * _ease_out(q))
+                color = (GOLD if i % 2 else GREEN)[:3] + (round(230 * (1 - q)),)
+                d.line([(cx + r0 * math.cos(a), cy + r0 * math.sin(a)), (cx + r1 * math.cos(a), cy + r1 * math.sin(a))],
+                       fill=color, width=max(1, round(4 * k * (1 - q) + 1)))
+            out.alpha_composite(fx.filter(ImageFilter.GaussianBlur(1.2 * k)))
+
+        # Etincelles projetees
+        d = ImageDraw.Draw(out)
+        for sp in self.sparks:
+            tt = t - sp["delay"]
+            if tt <= 0:
+                continue
+            dist = sp["v"] / 3 * (1 - math.exp(-3 * tt))
+            x, y = p + sp["x"] + dist * math.cos(sp["a"]), p + sp["y"] + dist * math.sin(sp["a"]) + 60 * k * tt * tt
+            r = sp["r"] * (1 - min(1, tt / self.duration))
+            if r > 0.3:
+                d.ellipse([x - r, y - r, x + r, y + r], fill=sp["color"][:3] + (round(255 * fade),))
+        return out, (p, p)
+
+    def _conceded(self, base, t):
+        k, p = self.k, self.pad
+        _, alpha, red, (x0, y0, x1, y1) = self.cache
+        W, H = base.width + 2 * p, base.height + 2 * p
+        out = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ix, iy = self.impact
+        hit = 0.2  # le ballon touche le filet
+        fade = 1.0 if t < 0.9 else max(0.0, 1 - (t - 0.9) / (self.duration - 0.9))
+
+        # L'overlay recule sous le choc et rougit un instant
+        tt = t - hit
+        sc = 1 - 0.05 * math.sin(math.pi * tt / 0.35) if 0 < tt < 0.35 else 1
+        tint = 0.28 * _pulse(t, hit + 0.05, 0.2)
+        img = Image.blend(base, red, tint) if tint > 0.01 else base
+        self._scaled(img, sc, out)
+
+        # Filet de but par-dessus l'overlay : il ondule depuis l'impact, puis se calme
+        if t >= hit:
+            amp = 7 * k * math.exp(-(t - hit) * 3.2)
+            mesh = 11 * k
+            lam, speed = 26 * k, 160 * k
+
+            def warp(x, y):
+                dx, dy = x - ix, y - iy
+                dist = math.hypot(dx, dy) or 1
+                front = (t - hit) * speed
+                wave = amp * math.exp(-max(0, dist - front) / (18 * k)) * math.sin((dist - front) / lam * 2 * math.pi)
+                return x + dx / dist * wave, y + dy / dist * wave
+
+            layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+            d = ImageDraw.Draw(layer)
+            step = 5 * k
+            color = (255, 255, 255, 150)
+            w = max(1, round(1.1 * k))
+            y = y0 - (iy - y0) % mesh
+            while y <= y1:
+                pts, x = [], x0
+                while x <= x1 + step:
+                    pts.append(warp(x, y))
+                    x += step
+                d.line(pts, fill=color, width=w)
+                y += mesh
+            x = x0 - (ix - x0) % mesh
+            while x <= x1:
+                pts, y = [], y0
+                while y <= y1 + step:
+                    pts.append(warp(x, y))
+                    y += step
+                d.line(pts, fill=color, width=w)
+                x += mesh
+            layer.putalpha(ImageChops.multiply(layer.getchannel("A"), self.solid).point(lambda v: round(v * fade)))
+            out.alpha_composite(layer, (p, p))
+
+        # Le ballon arrive vers le point d'impact en rapetissant (il rentre dans le filet)
+        fx = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(fx)
+        if t < hit + 0.12:
+            q = min(1.0, t / hit)
+            dist = (1 - _ease_out(q)) * (p + max(x1 - x0, y1 - y0) / 2)
+            bx, by = p + ix + dist * math.cos(self.ball_from), p + iy + dist * math.sin(self.ball_from)
+            r = (11 - 5 * q) * k
+            a = round(255 * (1 - max(0.0, t - hit) / 0.12))
+            d.ellipse([bx - r, by - r, bx + r, by + r], fill=(235, 240, 245, a), outline=(30, 40, 60, a),
+                      width=max(1, round(1.5 * k)))
+            d.ellipse([bx - r * 0.35, by - r * 0.35, bx + r * 0.35, by + r * 0.35], fill=(30, 40, 60, a))
+        # Onde rouge a l'impact
+        q = (t - hit) / 0.45
+        if 0 < q < 1:
+            r = (6 + 34 * _ease_out(q)) * k
+            d.ellipse([p + ix - r, p + iy - r, p + ix + r, p + iy + r], outline=RED[:3] + (round(230 * (1 - q)),),
+                      width=max(1, round(3 * k * (1 - q) + 1)))
+        out.alpha_composite(fx)
+        return out, (p, p)
+
+
+def animation(kind, k):
+    """Animation de fin de match ("w", "l") ou de but ("gw", "gl")."""
+    return GoalAnimation(kind, k) if kind in GoalAnimation.DURATION else MatchAnimation(kind, k)
+
+
+# --------------------------------------------------------------------------
+# Adversaires deja croises (affiches pendant le match)
+# --------------------------------------------------------------------------
+
+def render_met_chips(players, k, title, letters, align="center"):
+    """players = [(pseudo, V, D)] -> titre et une pastille par joueur, empiles.
+    letters = ("V", "D") dans la langue active ; align = "center" ou "right"."""
+    s = k * SS
+    pad, ch, gap = 14 * s, 26 * s, 5 * s  # marge (ombre), hauteur d'une pastille, ecart
+    head = text_img([(title, font(round(11 * s), SEMI), AMBER, 0)], shear=0)
+    name_f, rec_f = font(round(14 * s)), font(round(13 * s), SEMI)
+    sep = 10 * s  # entre le pseudo et le bilan
+    chips = [(text_img([(name, name_f, FG, 0)], shear=0),
+              text_img([(f"{w}{letters[0]}", rec_f, GREEN, 0), (f"{l}{letters[1]}", rec_f, RED, 0)], shear=0))
+             for name, w, l in players]
+    widths = [n.width + sep + r.width + 24 * s for n, r in chips]
+    inner_w = max([head.width] + widths)
+    inner_h = head.height + 6 * s + len(chips) * (ch + gap) - gap
+    w_px, h_px = math.ceil((inner_w + 2 * pad) / SS), math.ceil((inner_h + 2 * pad) / SS)
+    W, H = w_px * SS, h_px * SS
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+
+    def x_of(width):
+        return W - pad - width if align == "right" else (W - width) / 2
+
+    boxes, y = [], pad + head.height + 6 * s
+    for bw in widths:
+        boxes.append([x_of(bw), y, x_of(bw) + bw, y + ch])
+        y += ch + gap
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow)
+    for box in boxes:
+        sd.rounded_rectangle(box, radius=ch / 2, fill=(0, 0, 0, 150))
+    img.alpha_composite(_blur_cached(shadow, 6 * s))
+    img.alpha_composite(head, (round(x_of(head.width)), round(pad)))
+    d = ImageDraw.Draw(img)
+    for box, (name, rec) in zip(boxes, chips):
+        d.rounded_rectangle(box, radius=ch / 2, fill=PANEL[:3] + (240,), outline=AMBER, width=max(1, round(1.2 * s)))
+        cy = (box[1] + box[3]) / 2
+        paste_center(img, name, (box[0] + 12 * s + name.width / 2, cy))
+        paste_center(img, rec, (box[2] - 12 * s - rec.width / 2, cy))
+    return finish(img, w_px, h_px)
+
+
 # --------------------------------------------------------------------------
 # Resume de fin de match
 # --------------------------------------------------------------------------
 
 def render_summary(info, k, T):
-    """Carte affichee apres un match. info = {"won", "forfeit", "mode", "score", "me"} ; T = traduction."""
+    """Carte affichee apres un match. info = {"won", "mode", "score", "me"} ; T = traduction."""
     s = k * SS
     BW, BH, slant = 340, 150, 14
     pad = 18  # place pour l'ombre
@@ -756,7 +1079,7 @@ def render_summary(info, k, T):
 
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ImageDraw.Draw(shadow).polygon(shape, fill=(0, 0, 0, 160))
-    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(8 * s)))
+    img.alpha_composite(_blur_cached(shadow, 8 * s))
 
     d = ImageDraw.Draw(img)
     color = GREEN if info["won"] else RED
@@ -768,7 +1091,7 @@ def render_summary(info, k, T):
                (x0 + slant * s * (1 - hh / (y1 - y0)), y0 + hh)], fill=_scaled(color, 0.36, 255))
     d.polygon([(x0 + slant * s, y0), (x1, y0), (x1 - 0.5 * s, y0 + 4 * s), (x0 + (slant - 0.5) * s, y0 + 4 * s)],
               fill=color)
-    title = T("sum_forfeit") if info.get("forfeit") else T("sum_win" if info["won"] else "sum_loss")
+    title = T("sum_win" if info["won"] else "sum_loss")  # un match quitte est une defaite, sans plus
     t = text_img([(title, font(round(24 * s)), FG, 0)])
     img.alpha_composite(t, (round(x0 + 24 * s), round(y0 + hh / 2 + 2 * s - t.height / 2)))
     right = x1 - 22 * s

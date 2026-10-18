@@ -2,7 +2,7 @@
 
 import datetime
 import tkinter as tk
-from tkinter import colorchooser, filedialog, ttk
+from tkinter import colorchooser, filedialog, messagebox, ttk
 
 import achievements
 from history import MODES, History
@@ -218,6 +218,10 @@ class SettingsWindow:
         row = _row(f, T("s_volume"))
         _button(row, T("s_test"), lambda: self.app.play_sound("w")).pack(side="right", padx=(8, 0))
         _slider(row, self.var("volume", tk.IntVar), 0, 100, lambda: self.changed("volume"))
+        for kind in ("w", "l", "gw", "gl"):
+            self.sound_row(f, kind)
+        _check(f, T("s_session_timer"), self.var("session_timer", tk.BooleanVar),
+               lambda: self.changed("session_timer")).pack(fill="x", padx=12, pady=6)
 
         # --- Fonctions
         f = _section(body, T("s_features"))
@@ -230,6 +234,8 @@ class SettingsWindow:
         self.vars["summary_time"].trace_add("write", lambda *a: self._safe_int("summary_time", 4, 60))
         _check(f, T("s_met"), self.var("met_alert", tk.BooleanVar),
                lambda: self.changed("met_alert")).pack(fill="x", padx=12, pady=6)
+        _check(f, T("s_goal_alert"), self.var("goal_alert", tk.BooleanVar),
+               lambda: self.changed("goal_alert")).pack(fill="x", padx=12, pady=6)
         _check(f, T("s_tilt"), self.var("tilt_alert", tk.BooleanVar),
                lambda: self.changed("tilt_alert")).pack(fill="x", padx=12, pady=6)
         discord = _check(f, T("s_discord"), self.var("discord", tk.BooleanVar), lambda: self.changed("discord"))
@@ -280,6 +286,33 @@ class SettingsWindow:
 
         _button(body, T("s_close"), self.close).pack(pady=16)
 
+    def sound_row(self, frame, kind):
+        """Son de victoire / defaite : fichier choisi (MP3, WAV) ou son par defaut."""
+        row = _row(frame, T("s_sound_" + kind))
+        custom = self.app.store["custom_sounds"].get(kind)
+        _button(row, "▶", lambda: self.app.play_sound(kind)).pack(side="right", padx=(6, 0))
+        if custom:
+            _button(row, T("s_sound_reset"), lambda: self.set_sound(kind, None)).pack(side="right", padx=(6, 0))
+        _button(row, T("s_sound_pick"), lambda: self.pick_sound(kind)).pack(side="right", padx=(6, 0))
+        if not custom:
+            tk.Label(row, text=T("s_sound_default"), bg=PANEL, fg=MUTED, font=("Segoe UI", 9)).pack(side="right")
+            return
+        name = custom["name"]
+        tk.Label(frame, text="♪ " + (name if len(name) <= 60 else name[:59] + "…"), bg=PANEL, fg=MUTED,
+                 font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=30, pady=(0, 4))
+
+    def pick_sound(self, kind):
+        path = filedialog.askopenfilename(parent=self.win, title=T("s_sound_" + kind),
+                                          filetypes=[(T("s_sound_files"), "*.mp3 *.wav")])
+        if path:
+            self.set_sound(kind, path)
+
+    def set_sound(self, kind, path):
+        ok = self.app.set_custom_sound(kind, path)
+        self.rebuild()
+        if not ok:
+            messagebox.showwarning(T("s_sound_" + kind), T("s_sound_failed"), parent=self.win)
+
     def _safe_int(self, key, lo, hi):
         try:
             value = int(self.vars[key].get())
@@ -312,6 +345,7 @@ class HistoryWindow:
         self.period = "7d"
         self.mode = None
         self.tab = "overview"
+        self.analysis_match = None  # "t" du match choisi dans l'onglet Analyse (None = tous)
         self.win = _dark_window(app.root, T("h_title"), "860x640")
         self.win.minsize(720, 520)
         self.win.protocol("WM_DELETE_WINDOW", self.close)
@@ -511,7 +545,7 @@ class HistoryWindow:
             score = m.get("score") or [None, None]
             tree.insert("", "end", tags=("w" if m["won"] else "l",), values=(
                 datetime.datetime.fromtimestamp(m["t"]).strftime(fmt), m.get("mode", "?"),
-                T("h_won" if m["won"] else "h_lost") + (" *" if m.get("forfeit") else ""),
+                T("h_won" if m["won"] else "h_lost"),
                 f"{score[0]} – {score[1]}" if None not in score else "–",
                 f"{me.get('goals', 0)} / {me.get('assists', 0)} / {me.get('saves', 0)}" if me else "–"))
 
@@ -601,10 +635,37 @@ class HistoryWindow:
 
     # --- Analyse (engagements, boost, carte des buts) -----------------------
 
+    def _match_label(self, m):
+        fmt = "%d/%m %H:%M" if lang() == "fr" else "%m/%d %H:%M"
+        score = m.get("score") or [None, None]
+        result = T("h_won" if m["won"] else "h_lost")
+        if None not in score:
+            result += f" {score[0]}–{score[1]}"
+        return f"{datetime.datetime.fromtimestamp(m['t']).strftime(fmt)}  ·  {m.get('mode', '?')}  ·  {result}"
+
+    def _match_filter(self, matches):
+        """Liste deroulante : tous les matchs de la periode ou un seul. Renvoie les matchs a analyser."""
+        bar = tk.Frame(self.content, bg=BG)
+        bar.pack(fill="x", pady=(0, 8))
+        tk.Label(bar, text=T("h_match_filter"), bg=BG, fg=MUTED, font=BODY_FONT).pack(side="left", padx=(0, 8))
+        recent = list(reversed(matches))[:100]
+        choices = [("", T("h_all_matches"))] + [(str(m["t"]), self._match_label(m)) for m in recent]
+        picked = next((m for m in recent if str(m["t"]) == self.analysis_match), None)
+        var = tk.StringVar(value=str(picked["t"]) if picked else "")
+
+        def pick():
+            self.analysis_match = var.get() or None
+            self.show()
+
+        _option(bar, var, choices, pick).pack(side="left")
+        return [picked] if picked else matches
+
     def show_analysis(self, matches):
+        matches = self._match_filter(matches)
         mes = [m.get("me") or {} for m in matches]
         kick = [sum(me.get("kickoffs", [0, 0, 0])[i] for me in mes) for i in range(3)]
         boosts = [me["boost"] for me in mes if me.get("boost")]
+        zeros = [b for b in boosts if "n" in b]  # avant la version 1.4.0, le temps a 0 boost valait toujours 0
         spots = [s for me in mes for s in me.get("goal_spots", [])]
         if not (sum(kick) or boosts or spots):
             tk.Label(self.content, text=T("h_no_adv"), bg=BG, fg=MUTED, font=BODY_FONT).pack(expand=True)
@@ -612,15 +673,16 @@ class HistoryWindow:
         tiles = tk.Frame(self.content, bg=BG)
         tiles.pack(fill="x")
 
-        def avg(key):
-            return sum(b[key] for b in boosts) / len(boosts) if boosts else None
+        def avg(key, items=None):
+            items = boosts if items is None else items
+            return sum(b[key] for b in items) / len(items) if items else None
 
         decided = kick[0] + kick[1]
         for title, value, sub in (
                 (T("h_kickoffs"), f"{round(kick[0] * 100 / decided)} %" if decided else "–",
                  T("h_kickoffs_sub", w=kick[0], l=kick[1], n=kick[2])),
                 (T("h_boost"), f"{avg('avg'):.0f}" if boosts else "–", ""),
-                (T("h_zero"), f"{avg('zero'):.0f} %" if boosts else "–", ""),
+                (T("h_zero"), f"{avg('zero', zeros):.0f} %" if zeros else "–", ""),
                 (T("h_superso"), f"{avg('superso'):.0f} %" if boosts else "–", ""),
         ):
             tile = tk.Frame(tiles, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
