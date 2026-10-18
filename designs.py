@@ -6,7 +6,8 @@ Chaque design est une fonction render(state, k, hover) qui renvoie :
   - les boutons {nom: (x0, y0, x1, y1)} en pixels de l'image.
 
 Ancrage : pour les formes arrondies, c'est le centre de la jauge de boost ; pour
-les formes droites, c'est le milieu du bas de l'image, place juste au-dessus.
+les formes droites, c'est le milieu du bas de l'image, place juste au-dessus ;
+pour les formes verticales, c'est le milieu du bord droit, colle au bord de l'ecran.
 `k` = echelle (1.0 sur un ecran 1440p).
 """
 
@@ -124,6 +125,35 @@ def draw_buttons(d, cx, y1, s):
     return buttons
 
 
+BUTTONS_H = 6 * 24 + 5 * 5 + 8  # hauteur de la colonne de boutons (formes verticales)
+
+
+def draw_buttons_column(d, x0, cy, s):
+    """Colonne de boutons centree sur cy, bord gauche a x0 (pixels sur-echantillonnes)."""
+    labels = [("+W", "w+", BTN_GREEN), ("-W", "w-", PANEL_MID), ("+L", "l+", BTN_RED),
+              ("-L", "l-", PANEL_MID), ("", "menu", PANEL_MID), ("X", "quit", PANEL_MID)]
+    bw, bh, gap, sl = 40 * s, 24 * s, 5 * s, 6 * s
+    y = cy - BUTTONS_H * s / 2
+    bf = font(round(13 * s), SEMI)
+    buttons = {}
+    for i, (label, key, fill) in enumerate(labels):
+        if i in (2, 4):
+            y += 4 * s
+        x, y1 = x0, y + bh
+        d.polygon([(x + sl, y), (x + bw, y), (x + bw - sl, y1), (x, y1)], fill=fill, outline=EDGE,
+                  width=max(1, round(1.2 * s)))
+        if key == "menu":
+            for dy in (-5, 0, 5):
+                ly = (y + y1) / 2 + dy * s
+                d.line([(x + bw / 2 - 7 * s, ly), (x + bw / 2 + 7 * s, ly)], fill=FG, width=max(1, round(2 * s)))
+        else:
+            bb = bf.getbbox(label)
+            d.text((x + bw / 2 - (bb[0] + bb[2]) / 2, (y + y1) / 2 - (bb[1] + bb[3]) / 2), label, font=bf, fill=FG)
+        buttons[key] = tuple(round(v / SS) for v in (x, y, x + bw, y1))
+        y += bh + gap
+    return buttons
+
+
 def finish(img, k_w, k_h, opacity=1.0):
     out = img.convert("RGBa").resize((k_w, k_h), Image.LANCZOS).convert("RGBA")
     if opacity < 1:
@@ -141,7 +171,7 @@ def pct_of(state):
 # Tableau des scores, forme arrondie : arc autour du haut de la jauge de boost
 # --------------------------------------------------------------------------
 
-GAUGE_R = 131          # rayon exterieur de la jauge de boost (1440p)
+GAUGE_R = 172          # rayon exterieur de la jauge de boost, barres du haut comprises (1440p, interface a 100 %)
 R_IN = GAUGE_R + 10
 R_OUT = R_IN + 42
 STRIP_IN = R_OUT + 5
@@ -419,6 +449,136 @@ def render_mini(state, k, hover=False):
 
     buttons = draw_buttons(d, cx, top - 8 * s, s) if hover else {}
     return finish(img, w_px, h_px), (w_px / 2, h_px), buttons
+
+
+# --------------------------------------------------------------------------
+# Formes verticales : collees au bord droit de l'ecran, independantes de
+# l'echelle de l'interface du jeu
+# --------------------------------------------------------------------------
+
+V_SIDE = 40 + 8  # colonne de boutons + marge, a gauche
+V_BAND = 20      # bandeau d'info vertical, entre les boutons et le panneau
+
+
+def _fit_font(text, px, style, max_w):
+    """Police la plus grande (<= px) pour que le texte tienne dans max_w."""
+    while px > 6 and font(px, style).getlength(text) > max_w:
+        px -= 1
+    return font(px, style)
+
+
+def _v_strip_len(info, s):
+    """Longueur du bandeau d'info vertical (pixels sur-echantillonnes)."""
+    return font(round(12 * s), SEMI).getlength(info[0]) + 24 * s if info else 0
+
+
+def _v_strip(img, info, x0, cy, s, rounded):
+    """Bandeau d'info vertical (texte de bas en haut), centre sur cy."""
+    text, color, filled = info
+    half = _v_strip_len(info, s) / 2
+    box = [x0, cy - half, x0 + V_BAND * s, cy + half]
+    d = ImageDraw.Draw(img)
+    fill = color if filled else PANEL
+    if rounded:
+        d.rounded_rectangle(box, radius=V_BAND / 2 * s, fill=fill)
+    else:
+        sl = 6 * s
+        d.polygon([(box[0], box[1] + sl), (box[2], box[1]), (box[2], box[3]), (box[0], box[3] - sl)], fill=fill,
+                  outline=None if filled else EDGE, width=max(1, round(1.2 * s)))
+    t = text_img([(text, font(round(12 * s), SEMI), PANEL[:3] + (255,) if filled else color, 0)], shear=0)
+    paste_center(img, t, ((box[0] + box[2]) / 2, cy), 90)
+
+
+def render_vscore(state, k, hover=False):
+    """Tableau des scores vertical : W / % / L empiles, colles au bord droit."""
+    s = k * SS
+    PW, WB, MB, G, sl = 96, 64, 58, 3, 14
+    PH = 2 * WB + MB + 2 * G
+    info = state.get("info")
+    h_u = max(PH, BUTTONS_H, _v_strip_len(info, s) / s) + 8
+    w_u = V_SIDE + V_BAND + 5 + PW
+    w_px, h_px = round(w_u * k), round(h_u * k)
+    W, H = w_px * SS, h_px * SS
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    lw = max(1, round(1.2 * s))
+    flash = state.get("flash")
+    panel, mid = (11, 19, 34, 255), (20, 31, 54, 255)
+
+    x0, xr = W - PW * s, W
+    cy = H / 2
+    top = cy - PH / 2 * s
+    a = 4 * s
+
+    # Victoires : coin haut-gauche biseaute, lisere vert cote ecran
+    y0, y1 = top, top + WB * s
+    d.polygon([(x0 + sl * s, y0), (xr, y0), (xr, y1), (x0, y1), (x0, y0 + sl * s)],
+              fill=FLASH_WIN[:3] + (255,) if flash == "w" else panel, outline=EDGE, width=lw)
+    d.polygon([(x0 + sl * s, y0), (x0 + sl * s + a, y0), (x0 + a, y0 + sl * s), (x0 + a, y1), (x0, y1),
+               (x0, y0 + sl * s)], fill=GREEN)
+    paste_center(img, text_img([("W", font(round(16 * s)), GREEN, round(12 * s)),
+                                (str(state["w"]), font(round(34 * s)), FG, 0)]), (x0 + (PW / 2 + 2) * s, (y0 + y1) / 2))
+
+    # Pourcentage
+    y0 = y1 + G * s
+    y1 = y0 + MB * s
+    d.rectangle([x0, y0, xr, y1], fill=mid, outline=EDGE, width=lw)
+    pct, _ = pct_of(state)
+    paste_center(img, text_img([(f"{pct}%", font(round(24 * s)), FG, 0)]), (x0 + PW / 2 * s, y0 + 23 * s))
+    sub = text_img([(state["sub"], _fit_font(state["sub"], round(11 * s), SEMI, (PW - 12) * s), MUTED, 0)], shear=0)
+    paste_center(img, sub, (x0 + PW / 2 * s, y0 + 44 * s))
+
+    # Defaites : coin bas-gauche biseaute, lisere rouge
+    y0 = y1 + G * s
+    y1 = y0 + WB * s
+    d.polygon([(x0, y0), (xr, y0), (xr, y1), (x0 + sl * s, y1), (x0, y1 - sl * s)],
+              fill=FLASH_LOSS[:3] + (255,) if flash == "l" else panel, outline=EDGE, width=lw)
+    d.polygon([(x0, y0), (x0 + a, y0), (x0 + a, y1 - sl * s), (x0 + sl * s + a, y1), (x0 + sl * s, y1),
+               (x0, y1 - sl * s)], fill=RED)
+    paste_center(img, text_img([(str(state["l"]), font(round(34 * s)), FG, 0),
+                                ("L", font(round(16 * s)), RED, round(12 * s))]), (x0 + (PW / 2 + 2) * s, (y0 + y1) / 2))
+
+    if info:
+        _v_strip(img, info, x0 - (5 + V_BAND) * s, cy, s, rounded=False)
+    buttons = draw_buttons_column(d, 0, cy, s) if hover else {}
+    return finish(img, w_px, h_px, opacity=0.88), (w_px, h_px / 2), buttons
+
+
+def render_mini_v(state, k, hover=False):
+    """Minimal vertical : languette arrondie qui sort du bord droit."""
+    s = k * SS
+    PW, PH = 50, 176
+    info = state.get("info")
+    h_u = max(PH + 24, BUTTONS_H, _v_strip_len(info, s) / s) + 8
+    w_u = V_SIDE + V_BAND + 8 + PW
+    w_px, h_px = round(w_u * k), round(h_u * k)
+    W, H = w_px * SS, h_px * SS
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    cy = H / 2
+    box = [W - PW * s, cy - PH / 2 * s, W + PW * s, cy + PH / 2 * s]  # deborde a droite : bord droit plat
+    r = PW / 2 * s
+
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle(box, radius=r, fill=(0, 0, 0, 140))
+    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(6 * s)))
+
+    d = ImageDraw.Draw(img)
+    flash = state.get("flash")
+    fill = FLASH_WIN if flash == "w" else FLASH_LOSS if flash == "l" else PANEL
+    d.rounded_rectangle(box, radius=r, fill=fill, outline=EDGE, width=max(1, round(1.2 * s)))
+    cx = W - PW / 2 * s
+    big = font(round(24 * s))
+    paste_center(img, text_img([(str(state["w"]), big, GREEN, 0)]), (cx, cy - 58 * s))
+    paste_center(img, text_img([(str(state["l"]), big, RED, 0)]), (cx, cy + 58 * s))
+    pct, _ = pct_of(state)
+    paste_center(img, text_img([(f"{pct}%", _fit_font(f"{pct}%", round(17 * s), BOLD, (PW - 8) * s), FG, 0)]), (cx, cy))
+    for sy in (cy - 31 * s, cy + 31 * s):
+        d.line([(cx - 13 * s, sy + 3 * s), (cx + 13 * s, sy - 3 * s)], fill=EDGE, width=max(1, round(1.5 * s)))
+
+    if info:
+        _v_strip(img, info, W - (PW + 8 + V_BAND) * s, cy, s, rounded=True)
+    buttons = draw_buttons_column(d, 0, cy, s) if hover else {}
+    return finish(img, w_px, h_px), (w_px, h_px / 2), buttons
 
 
 # --------------------------------------------------------------------------
@@ -727,12 +887,16 @@ def render_session_card(info, T):
 
 # Deux reglages independants : le design (style) et la forme (libelles : i18n style_* / shape_*)
 STYLES = ("tableau", "minimal")
-SHAPES = ("arrondi", "droit")
+SHAPES = ("arrondi", "droit", "vertical")
 
-# (design, forme) -> (cle de position, fonction de rendu, ancre = centre de la jauge ?)
+# (design, forme) -> (cle de position, fonction de rendu, ancre)
+# Ancre : "gauge" = centre de la jauge de boost, "above" = juste au-dessus,
+# "edge" = milieu du bord droit de l'ecran
 RENDERERS = {
-    ("tableau", "arrondi"): ("arc", render_arc, True),
-    ("tableau", "droit"): ("score", render_score, False),
-    ("minimal", "arrondi"): ("mini_arc", render_mini_arc, True),
-    ("minimal", "droit"): ("mini", render_mini, False),
+    ("tableau", "arrondi"): ("arc", render_arc, "gauge"),
+    ("tableau", "droit"): ("score", render_score, "above"),
+    ("tableau", "vertical"): ("vscore", render_vscore, "edge"),
+    ("minimal", "arrondi"): ("mini_arc", render_mini_arc, "gauge"),
+    ("minimal", "droit"): ("mini", render_mini, "above"),
+    ("minimal", "vertical"): ("mini_v", render_mini_v, "edge"),
 }

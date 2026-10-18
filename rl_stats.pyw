@@ -59,7 +59,7 @@ DATA_FILE = os.path.join(DATA_DIR, "stats.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "matches.json")
 LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
 
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
 # "Application ID" Discord (https://discord.com/developers/applications) : vide = statut Discord indisponible
@@ -71,10 +71,13 @@ API_PORT = 49123
 PACKET_SEND_RATE = 10
 LOCK_PORT = 49199  # empeche de lancer deux overlays en meme temps (le 2e reaffiche le 1er)
 
-# Jauge de boost de RL sur un ecran 1440p : centre a 171 px du bord droit et
-# 177 px du bas (l'overlay s'enroule autour de son sommet)
-BOOST_FROM_RIGHT = 171
-BOOST_FROM_BOTTOM = 177
+# Jauge de boost de RL sur un ecran 1440p, interface du jeu a 100 % : centre a
+# 230 px du bord droit et 228 px du bas (l'overlay s'enroule autour de son sommet).
+# L'echelle de l'interface du jeu reduit tout vers le coin (mesure a 50 % et 100 %).
+BOOST_FROM_RIGHT = 230
+BOOST_FROM_BOTTOM = 228
+HUD_SCALE_RANGE = (50, 150)
+GAUGE_KEYS = ("arc", "score", "mini_arc", "mini")  # positions qui suivent la jauge
 
 SIZES = {0.9: "90 %", 0.95: "95 %", 1.0: "100 %", 1.05: "105 %", 1.1: "110 %"}
 
@@ -640,8 +643,8 @@ class ShellIcons(threading.Thread):
 
 class Store:
     DEFAULTS = {
-        "player_name": "", "detected_name": "", "design": "tableau", "shape": "arrondi", "offsets": {},
-        "size": 1.0, "processed": [],
+        "player_name": "", "detected_name": "", "design": "tableau", "shape": "vertical", "offsets": {},
+        "size": 1.0, "hud_scale": 100, "processed": [],
         "lang": "auto", "monitor": 0, "counter": "mode", "goal": 0,
         "win_color": "#2ee66b", "loss_color": "#ff4d4d", "opacity": 100, "animations": True,
         "sounds": False, "volume": 60, "summary": True, "summary_time": 12, "met_alert": True,
@@ -661,12 +664,15 @@ class Store:
                                   or (k == "size" and isinstance(v, (int, float)))})
                 if "offset" in saved:  # ancienne version : un seul decalage, pour l'arc
                     self.data["offsets"].setdefault("arc", saved["offset"])
+                if "hud_scale" not in saved:  # avant le reglage d'echelle : decalages faits a la main, a oublier
+                    for key in GAUGE_KEYS:
+                        self.data["offsets"].pop(key, None)
                 # Anciennes versions : un seul reglage "design" qui melangeait style et forme
                 old = {"arc": ("tableau", "arrondi"), "score": ("tableau", "droit"), "mini": ("minimal", "droit")}
                 if self.data["design"] in old:
                     self.data["design"], self.data["shape"] = old[self.data["design"]]
                 if (self.data["design"], self.data["shape"]) not in designs.RENDERERS:
-                    self.data["design"], self.data["shape"] = "tableau", "arrondi"
+                    self.data["design"], self.data["shape"] = "tableau", "vertical"
             except (OSError, ValueError):
                 log("stats.json illisible, valeurs par defaut")
         self.save()
@@ -1384,6 +1390,15 @@ class Overlay:
         # Le HUD de RL suit la hauteur de l'image du jeu ; reference : 1440p
         return self.viewport[3] / 1440
 
+    def hud_scale(self):
+        """Echelle du HUD de RL : hauteur de l'image et echelle de l'interface reglee dans le jeu."""
+        return self.scale() * self.store["hud_scale"] / 100
+
+    def design_k(self):
+        # Les formes autour du boost suivent le HUD ; la forme verticale ne depend que de l'ecran
+        base = self.scale() if self.renderer()[2] == "edge" else self.hud_scale()
+        return base * float(self.store["size"])
+
     def renderer(self):
         """(cle de position, fonction de rendu, ancre au centre de la jauge ?) du reglage actif."""
         return designs.RENDERERS[(self.store["design"], self.store["shape"])]
@@ -1395,11 +1410,14 @@ class Overlay:
     def screen_anchor(self):
         """Point de l'ecran ou se place l'ancre du design actif."""
         vx, vy, vw, vh = self.viewport
-        r = self.scale()
-        gx, gy = vx + vw - BOOST_FROM_RIGHT * r, vy + vh - BOOST_FROM_BOTTOM * r
-        if not self.renderer()[2]:
-            gy -= (designs.GAUGE_R + 14) * r  # juste au-dessus de la jauge
+        anchor = self.renderer()[2]
         dx, dy = self.offset()
+        if anchor == "edge":  # colle au bord droit : seul le decalage vertical compte
+            return vx + vw, vy + vh / 2 + dy
+        r = self.hud_scale()
+        gx, gy = vx + vw - BOOST_FROM_RIGHT * r, vy + vh - BOOST_FROM_BOTTOM * r
+        if anchor == "above":
+            gy -= (designs.GAUGE_R + 14) * r  # juste au-dessus de la jauge
         return gx + dx, gy + dy
 
     # --- Compteurs ----------------------------------------------------------
@@ -1443,7 +1461,7 @@ class Overlay:
         w, l = self.counts()
         state = {"w": w, "l": l, "info": self.info_line(), "flash": self.banner[2] if self.banner else None,
                  "sub": self.sub_label()}
-        k = self.scale() * float(self.store["size"])
+        k = self.design_k()
         render = self.renderer()[1]
         img, (ax, ay), buttons = render(state, k, hover=self.hover)
         self._base = (img, ax, ay, buttons)
@@ -1494,7 +1512,7 @@ class Overlay:
         self.draw()
 
     def play_animation(self, kind):
-        self.anim = designs.MatchAnimation(kind, self.scale() * float(self.store["size"]))
+        self.anim = designs.MatchAnimation(kind, self.design_k())
         if not self._anim_job:
             self._anim_tick()
 
@@ -1651,7 +1669,7 @@ class Overlay:
         info = info or self.last_summary
         if not info or self.hidden:
             return
-        k = self.scale() * float(self.store["size"])
+        k = self.design_k()
         img = designs.render_summary(info, k, T)
         base, ax, ay, _ = self._base
         sx, sy = self.screen_anchor()
@@ -1705,6 +1723,11 @@ class Overlay:
             pm.SEPARATOR,
             pm.chips(T("m_size"), [(label.replace(" %", ""), sky if self.store["size"] == value else fg,
                                     lambda v=value: self.set_size(v)) for value, label in SIZES.items()], pm.I_SIZE),
+            pm.chips(T("m_hud_scale"), [("−5", fg, lambda: self.adjust_hud_scale(-5)),
+                                        ("−1", fg, lambda: self.adjust_hud_scale(-1)),
+                                        (f"{self.store['hud_scale']} %", sky, lambda: None),
+                                        ("+1", fg, lambda: self.adjust_hud_scale(1)),
+                                        ("+5", fg, lambda: self.adjust_hud_scale(5))], pm.I_SHAPE),
             pm.item(T("m_replace"), self.reset_position, pm.I_PLACE, keep_open=True),
             pm.SEPARATOR,
             pm.header(T("m_preview").upper()),
@@ -1716,6 +1739,11 @@ class Overlay:
 
     def set_size(self, value):
         self.store["size"] = value
+        self.draw()
+
+    def adjust_hud_scale(self, step):
+        lo, hi = HUD_SCALE_RANGE
+        self.store["hud_scale"] = min(hi, max(lo, self.store["hud_scale"] + step))
         self.draw()
 
     def set_shape(self, key):
@@ -1952,7 +1980,8 @@ class Overlay:
         self._start = (e.x_root, e.y_root)
 
     def drag_delta(self, e):
-        return e.x_root - self._start[0], e.y_root - self._start[1]
+        dx = 0 if self.renderer()[2] == "edge" else e.x_root - self._start[0]  # reste colle au bord
+        return dx, e.y_root - self._start[1]
 
     def drag_move(self, e):
         # On deplace l'image deja rendue (pas de re-dessin pendant le glisser)
