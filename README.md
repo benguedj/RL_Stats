@@ -8,6 +8,10 @@ Session stats per mode, post-match summary, history and progress charts, OBS bro
 It uses Rocket League's **official Stats API** (the local socket Psyonix provides for overlays):
 nothing is injected into the game and nothing touches the anti-cheat. Everything stays on your PC.
 
+**▶ Demo video:**
+
+[![RL Stats demo video](docs/video_en.jpg)](https://youtu.be/coK2br0heKU)
+
 > 🇫🇷 [Version française plus bas](#-en-français)
 
 ---
@@ -174,6 +178,10 @@ Rocket League is a trademark of Psyonix LLC.*
 ## 🇫🇷 En français
 
 **Compteur automatique de victoires / défaites pour Rocket League**, affiché autour de la jauge de boost.
+
+**▶ Vidéo de démo :**
+
+[![Vidéo de démo de RL Stats](docs/video_fr.jpg)](https://youtu.be/coK2br0heKU)
 
 👉 **[Télécharger la dernière version](https://github.com/benguedj/RL_Stats/releases/latest)**, puis :
 
