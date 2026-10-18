@@ -61,7 +61,7 @@ DATA_FILE = os.path.join(DATA_DIR, "stats.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "matches.json")
 LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
 
-APP_VERSION = "1.3.2"
+APP_VERSION = "1.3.3"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
 # "Application ID" Discord (https://discord.com/developers/applications) : vide = statut Discord indisponible
@@ -254,19 +254,24 @@ def check_update(out_queue):
 UPDATE_ZIP, UPDATE_SUMS, UPDATE_EXE = "RL Stats.zip", "SHA256SUMS.txt", "RL Stats.exe"
 
 
+def asset_url(assets, name):
+    # GitHub remplace les espaces des noms de fichiers par des points ("RL.Stats.zip")
+    return assets.get(name) or assets.get(name.replace(" ", "."))
+
+
 def can_self_update(assets):
-    return getattr(sys, "frozen", False) and bool(assets.get(UPDATE_ZIP)) and bool(assets.get(UPDATE_SUMS))
+    return getattr(sys, "frozen", False) and bool(asset_url(assets, UPDATE_ZIP)) and bool(asset_url(assets, UPDATE_SUMS))
 
 
 def download_update(assets, out_queue):
     """Telecharge et verifie le nouvel exe (thread). Envoie update_ready (chemin) ou update_failed."""
     try:
         sums = {}
-        for line in http_get(assets[UPDATE_SUMS]).decode("utf-8-sig").splitlines():
+        for line in http_get(asset_url(assets, UPDATE_SUMS)).decode("utf-8-sig").splitlines():
             parts = line.strip().split(None, 1)
             if len(parts) == 2:
                 sums[parts[1].lstrip("*")] = parts[0].lower()
-        data = http_get(assets[UPDATE_ZIP], timeout=60)
+        data = http_get(asset_url(assets, UPDATE_ZIP), timeout=60)
         if hashlib.sha256(data).hexdigest() != sums.get(UPDATE_ZIP):
             raise ValueError("empreinte SHA-256 du zip incorrecte")
         with zipfile.ZipFile(io.BytesIO(data)) as z:
