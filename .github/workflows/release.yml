@@ -1,6 +1,7 @@
 # Construit "RL Stats.exe" sur GitHub et l'attache a la release du tag.
 # Usage : mettre a jour APP_VERSION dans rl_stats.pyw, commit, puis
-#   git tag v1.2.1 && git push origin v1.2.1
+#   git tag v1.3.1 && git push origin v1.3.1
+# La release est publiee automatiquement (notes generees depuis les commits).
 # Lancement manuel (onglet Actions) : build seul, sans release, pour tester.
 
 name: Release
@@ -83,9 +84,10 @@ jobs:
             dist/RL Stats.zip
             dist/SHA256SUMS.txt
 
-      # Cree la release en brouillon (a relire puis publier sur GitHub),
-      # ou remplace les fichiers si la release du tag existe deja.
-      - name: Attach to GitHub release
+      # Cree la release en brouillon (ou remplace les fichiers si celle du tag
+      # existe deja), puis la publie une fois les fichiers en ligne : l'appli ne
+      # voit jamais une release sans son zip.
+      - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         env:
@@ -97,3 +99,4 @@ jobs:
             gh release create $tag --draft --title $tag --generate-notes
           }
           gh release upload $tag "dist/RL Stats.zip" dist/SHA256SUMS.txt --clobber
+          gh release edit $tag --draft=false --latest
