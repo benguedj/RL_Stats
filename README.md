@@ -129,6 +129,38 @@ build.bat
 | `rl_stats.spec`, `build.bat` | PyInstaller build |
 | `packaging/` | Readme files shipped in the zip |
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+Official releases are built from this repository by
+[GitHub Actions](.github/workflows/release.yml), never on a personal machine. Only that build is
+signed and attached to the [Releases](https://github.com/benguedj/RL_Stats/releases).
+
+**Team roles**
+
+- Committers and reviewers: [benguedj](https://github.com/benguedj)
+- Approvers: [benguedj](https://github.com/benguedj)
+
+Every signing request is approved by hand. All team members use two-factor authentication.
+
+**Privacy**
+
+This program will not transfer any information to other networked systems unless specifically
+requested by the user or the person installing or operating it. In detail:
+
+- **Update check**: at startup, it asks the GitHub API for the latest release number
+  (`api.github.com`). No personal data is sent. It can be turned off in the settings.
+- **Rocket League Stats API**: read from a local socket (`127.0.0.1:49123`) provided by the game.
+- **Streamer mode (OBS)**: a page served on `127.0.0.1` only, not reachable from the network. Off by default.
+- **Discord status**: sent to the Discord app running on your PC (local pipe), which shows it on
+  your profile. Off by default.
+- **Links** (GitHub page, player profiles on rocketleague.tracker.network) are opened in your
+  browser only when you click them.
+
+Match history and settings stay on your PC (`%APPDATA%\RL Stats`).
+
 ## License
 
 [MIT](LICENSE) © benguedj
@@ -162,3 +194,8 @@ glisser pour le déplacer, `Ctrl+Maj+H` pour le masquer, `Ctrl+Maj+R` pour réin
 
 Utilise la **Stats API officielle** de Rocket League : rien n'est injecté dans le jeu, aucun risque
 avec l'anti-cheat. Les données restent sur ton PC (`%APPDATA%\RL Stats`).
+
+**Signature et confidentialité** : les versions officielles sont construites par GitHub Actions
+depuis ce dépôt, puis signées gratuitement par [SignPath.io](https://about.signpath.io) (certificat de
+[SignPath Foundation](https://signpath.org)). Le seul accès à Internet est la vérification des mises à
+jour (`api.github.com`, désactivable). Détails dans la [Code signing policy](#code-signing-policy).
