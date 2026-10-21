@@ -4,7 +4,6 @@ import datetime
 import tkinter as tk
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
-import achievements
 from history import MODES, History
 from i18n import T, lang
 from obs_server import OBS_URL
@@ -375,8 +374,7 @@ class HistoryWindow:
         top = tk.Frame(self.win, bg=BG)
         top.pack(fill="x", padx=16, pady=(14, 6))
         self._segmented(top, [("overview", T("h_overview")), ("matches", T("h_matches_tab")),
-                              ("players", T("h_players")), ("trophies", T("h_trophies")),
-                              ("analysis", T("h_analysis"))], self.tab, self.set_tab).pack(side="left")
+                              ("players", T("h_players")), ("analysis", T("h_analysis"))], self.tab, self.set_tab).pack(side="left")
         _button(top, T("h_export"), self.export, bg=PANEL).pack(side="right")
         _button(top, T("h_share"), self.app.share_card, bg=PANEL).pack(side="right", padx=(0, 6))
 
@@ -408,7 +406,7 @@ class HistoryWindow:
             child.destroy()
         matches = self.history.filter(self.period, self.mode)
         {"overview": self.show_overview, "matches": self.show_matches, "players": self.show_players,
-         "trophies": self.show_trophies, "analysis": self.show_analysis}[self.tab](matches)
+         "analysis": self.show_analysis}[self.tab](matches)
 
     # --- Progression --------------------------------------------------------
 
@@ -581,57 +579,6 @@ class HistoryWindow:
         fill()
         tree.bind("<Double-1>", lambda e: tree.focus() and self.app.open_player(tree.focus(),
                                                                                  players[tree.focus()]["name"]))
-
-    # --- Trophees et records ------------------------------------------------
-
-    def show_trophies(self, _matches):
-        matches = self.history.matches  # toujours sur tout l'historique
-        got = self.app.store["achievements"]
-        t = achievements.totals(matches)
-        fr = lang() == "fr"
-        tk.Label(self.content, text=T("h_unlocked", n=len(got), t=len(achievements.ACHIEVEMENTS)), bg=BG, fg=MUTED,
-                 font=BODY_FONT, anchor="w").pack(fill="x", pady=(0, 6))
-        body = tk.Frame(self.content, bg=BG)
-        body.pack(fill="both", expand=True)
-        grid = tk.Frame(body, bg=BG)
-        grid.pack(side="left", fill="both", expand=True)
-        gold = "#facc15"
-        cols = 3
-        for i, entry in enumerate(achievements.ACHIEVEMENTS):
-            done = entry[0] in got
-            value, goal = achievements.progress(entry, t)
-            tile = tk.Frame(grid, bg=PANEL, highlightbackground=gold if done else EDGE, highlightthickness=1)
-            tile.grid(row=i // cols, column=i % cols, sticky="nsew", padx=(0, 5), pady=(0, 5))
-            badge = tk.Canvas(tile, width=26, height=26, bg=PANEL, highlightthickness=0)
-            badge.create_oval(3, 3, 23, 23, fill=gold if done else BG, outline=gold if done else EDGE, width=2)
-            badge.create_text(13, 13, text="★" if done else "", fill=BG, font=("Segoe UI", 9, "bold"))
-            badge.pack(side="left", padx=(8, 6), pady=6)
-            text = tk.Frame(tile, bg=PANEL)
-            text.pack(side="left", fill="x", pady=4)
-            tk.Label(text, text=achievements.label(entry, lang()), bg=PANEL, fg=FG if done else MUTED,
-                     font=("Segoe UI", 9, "bold" if done else "normal"), anchor="w").pack(fill="x")
-            if done:
-                sub = datetime.datetime.fromtimestamp(got[entry[0]]).strftime("%d/%m/%Y" if fr else "%Y-%m-%d")
-            else:
-                sub = f"{min(round(value), goal)} / {goal}"
-            tk.Label(text, text=sub, bg=PANEL, fg=MUTED, font=("Segoe UI", 8), anchor="w").pack(fill="x")
-        for c in range(cols):
-            grid.columnconfigure(c, weight=1)
-
-        side = tk.Frame(body, bg=PANEL, highlightbackground=EDGE, highlightthickness=1, width=230)
-        side.pack(side="right", fill="y", padx=(8, 0))
-        side.pack_propagate(False)
-        tk.Label(side, text=T("h_records"), bg=PANEL, fg=FG, font=TITLE_FONT, anchor="w").pack(fill="x", padx=12,
-                                                                                            pady=(10, 6))
-        recs = achievements.records(matches)
-        for rid, _, _, fmt in achievements.RECORDS:
-            entry = next(r for r in achievements.RECORDS if r[0] == rid)
-            row = tk.Frame(side, bg=PANEL)
-            row.pack(fill="x", padx=12, pady=4)
-            tk.Label(row, text=achievements.label(entry, lang()), bg=PANEL, fg=MUTED, font=("Segoe UI", 9),
-                     anchor="w").pack(fill="x")
-            value = fmt.format(recs[rid][0]) if rid in recs else "–"
-            tk.Label(row, text=value, bg=PANEL, fg=FG, font=("Bahnschrift SemiBold", 16), anchor="w").pack(fill="x")
 
     # --- Analyse (engagements, boost, carte des buts) -----------------------
 

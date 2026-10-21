@@ -823,25 +823,59 @@ class MatchAnimation:
         return out, (p, p)
 
 
-class GoalAnimation:
-    """Animations de but, volontairement differentes de celles de fin de match.
-    But marque ("gw") : eclair de lumiere qui balaie l'overlay, rayons et etincelles en etoile
-    (comme une explosion de but), petit "pop".
-    But encaisse ("gl") : un ballon arrive dans l'overlay et un filet de but, dessine par-dessus,
-    ondule depuis le point d'impact ; l'overlay recule et rougit un instant.
-    Tous les effets sont dessines par-dessus l'overlay.
-    Meme interface que MatchAnimation : frame(base) -> (image agrandie de pad, (pad, pad))."""
+def _ease_out_back(p):
+    c = 1.70158
+    return 1 + (c + 1) * (p - 1) ** 3 + c * (p - 1) ** 2
 
-    DURATION = {"gw": 1.5, "gl": 1.4}
+
+class GoalAnimation:
+    """Animations de but, affichees en haut au milieu de l'ecran, juste sous le tableau des
+    scores de Rocket League (dans leur propre fenetre, independante de l'overlay).
+    Pas de texte : une barre lumineuse en biais, collee sous le score, porte l'animation.
+    But marque ("gw") : deux traits de lumiere jaillissent sous le score, la barre verte
+    rebondit en place, des chevrons de chaque cote du score pointent vers lui, etincelles.
+    But encaisse ("gl") : la barre rouge s'ecrase sous le score et tremble avec des
+    parasites, une lueur rouge bat deux fois, une ligne rouge s'etire, des debris tombent.
+
+    frame() -> (image, (x, 0)) : le point (x, 0) de l'image se place en haut au milieu du jeu.
+    `k` = echelle du HUD de RL (1.0 en 1440p, interface a 100 %)."""
+
+    DURATION = {"gw": 2.4, "gl": 2.3}
+    SCORE_H, SCORE_HALF = 100, 250  # tableau des scores de RL en 1440p : hauteur, demi-largeur
 
     def __init__(self, kind, k):
         self.kind, self.k = kind, k
         self.scored = kind == "gw"
-        self.pad = round(90 * k)
+        self.color = GREEN if self.scored else RED
         self.duration = self.DURATION[kind]
+        self.W, self.H = round(1000 * k), round(340 * k)
+        self.cx = self.W / 2
+        self.py = (self.SCORE_H + 18) * k  # centre de la barre
+        self.pill = self._pill()
+        rnd = random.Random()
+        pw, ph = self.pill_size
+        if self.scored:  # etincelles projetees par les bouts de la barre (jamais sur le score)
+            self.parts = []
+            for _ in range(36):
+                side = rnd.choice((-1, 1))
+                a = rnd.uniform(-25, 50)  # sur le cote, un peu vers le haut ou vers le bas
+                a, v = math.radians(a if side > 0 else 180 - a), rnd.uniform(220, 560) * k
+                self.parts.append({"x": self.cx + side * rnd.uniform(pw * 0.25, pw / 2), "y": self.py,
+                                   "vx": math.cos(a) * v, "vy": math.sin(a) * v,
+                                   "color": rnd.choice((GREEN, GOLD, FG)), "delay": 0.12 + rnd.uniform(0, 0.15),
+                                   "w": rnd.uniform(1.5, 2.8) * k})
+        else:  # debris qui se detachent du bas de la barre
+            self.parts = [{"x": self.cx + rnd.uniform(-pw / 2, pw / 2), "y": self.py + ph / 3,
+                           "vx": rnd.uniform(-70, 70) * k, "vy": rnd.uniform(-60, 40) * k,
+                           "rot": rnd.uniform(0, 360), "spin": rnd.uniform(-400, 400),
+                           "s": rnd.uniform(3, 7) * k, "delay": 0.14 + rnd.uniform(0, 0.25),
+                           "color": rnd.choice((RED, _scaled(RED, 0.55, 255), (71, 85, 105, 255)))}
+                          for _ in range(22)]
+            glow = Image.new("L", (self.W, self.H), 0)
+            ImageDraw.Draw(glow).ellipse([self.cx - 360 * k, self.py - 30 * k, self.cx + 360 * k, self.py + 55 * k],
+                                         fill=170)
+            self.glow = glow.filter(ImageFilter.GaussianBlur(28 * k))
         self.t0 = time.monotonic()
-        self.cache = None
-        self.sparks = None
 
     def elapsed(self):
         return time.monotonic() - self.t0
@@ -849,173 +883,205 @@ class GoalAnimation:
     def done(self):
         return self.elapsed() >= self.duration
 
-    def _prepare(self, base):
-        alpha = base.getchannel("A")
-        x0, y0, x1, y1 = alpha.point(lambda v: 255 if v > 100 else 0).getbbox() or (0, 0, *base.size)
-        red = Image.new("RGBA", base.size, RED[:3] + (255,))
-        red.putalpha(alpha)
-        self.solid = alpha.point(lambda v: 255 if v > 150 else 0)  # panneaux seuls, sans l'ombre autour
-        self.cache = (base, alpha, red, (x0, y0, x1, y1))
-        rnd = random.Random()
-        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-        self.sparks = [{"a": rnd.uniform(0, 2 * math.pi), "v": rnd.uniform(220, 480) * self.k,
-                        "r": rnd.uniform(1.6, 3.2) * self.k, "color": rnd.choice((GREEN, GOLD, FG)),
-                        "delay": rnd.uniform(0, 0.12), "x": cx, "y": cy} for _ in range(26)]
-        # But encaisse : point d'impact du ballon et direction d'ou il arrive
-        self.impact = ((x0 + x1) / 2, (y0 + y1) / 2)
-        for _ in range(40):  # un point sur un panneau (pas dans le vide sous l'arc)
-            ix, iy = x0 + (x1 - x0) * rnd.uniform(0.3, 0.7), y0 + (y1 - y0) * rnd.uniform(0.25, 0.75)
-            if self.solid.getpixel((min(int(ix), base.width - 1), min(int(iy), base.height - 1))):
-                self.impact = (ix, iy)
-                break
-        self.ball_from = rnd.uniform(-2.6, -0.5)  # angle : le ballon vient d'en haut
+    def _pill(self):
+        """Barre en biais (comme le HUD de RL) de la largeur du score, avec son halo,
+        rendue une fois pour toutes."""
+        k, color = self.k, self.color
+        pw, ph = round(self.SCORE_HALF * 1.7 * k), round(14 * k)
+        m = self.margin = round(26 * k)
+        sk = 9 * k  # biais
+        W, H = pw + 2 * m, ph + 2 * m
+        shape = [(m + sk, m), (m + pw, m), (m + pw - sk, m + ph), (m, m + ph)]
 
-    def frame(self, base):
-        t = self.elapsed()
-        if self.cache is None or self.cache[0] is not base:
-            self._prepare(base)
-        return self._scored(base, t) if self.scored else self._conceded(base, t)
+        glow = Image.new("L", (W, H), 0)
+        ImageDraw.Draw(glow).polygon(shape, fill=230)
+        img = Image.new("RGBA", (W, H), color[:3] + (0,))
+        img.putalpha(glow.filter(ImageFilter.GaussianBlur(12 * k)))
 
-    def _scaled(self, base, sc, out):
-        """Colle l'overlay (agrandi ou reduit de sc) au centre de out ; renvoie son decalage."""
-        p = self.pad
-        img = base
-        if sc != 1:
-            img = base.convert("RGBa").resize((round(base.width * sc), round(base.height * sc)),
-                                              Image.BICUBIC).convert("RGBA")
-        ox, oy = round(p + (base.width - img.width) / 2), round(p + (base.height - img.height) / 2)
-        out.alpha_composite(img, (ox, oy))
+        big = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0))
+        d = ImageDraw.Draw(big)
+
+        def up(pts):
+            return [(x * SS, y * SS) for x, y in pts]
+
+        d.polygon(up(shape), fill=color)
+        # Coeur plus clair sur la moitie haute : la barre a l'air eclairee
+        light = tuple(round(c + (255 - c) * 0.55) for c in color[:3]) + (255,)
+        d.polygon(up([(m + sk, m), (m + pw, m), (m + pw - sk * 0.45, m + ph * 0.45), (m + sk * 0.55, m + ph * 0.45)]),
+                  fill=light)
+        img.alpha_composite(big.resize((W, H), Image.LANCZOS))
+        self.pill_mask = Image.new("L", (W, H), 0)
+        ImageDraw.Draw(self.pill_mask).polygon(shape, fill=255)
+        self.pill_size = (pw, ph)
         return img
 
-    def _scored(self, base, t):
-        k, p = self.k, self.pad
-        _, alpha, _, (x0, y0, x1, y1) = self.cache
-        W, H = base.width + 2 * p, base.height + 2 * p
-        fade = min(1.0, max(0.0, (self.duration - t) / 0.4))
-        out = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        cx, cy = p + (x0 + x1) / 2, p + (y0 + y1) / 2
+    def _place(self, out, img, sc, dx, dy, alpha):
+        """Colle la barre (echelle sc, decale de dx, dy, opacite alpha) centre sous le score."""
+        if sc != 1:
+            img = img.convert("RGBa").resize((max(1, round(img.width * sc)), max(1, round(img.height * sc))),
+                                             Image.BICUBIC).convert("RGBA")
+        if alpha < 1:
+            img = img.copy()
+            img.putalpha(img.getchannel("A").point(lambda v: round(v * alpha)))
+        out.alpha_composite(img, (round(self.cx - img.width / 2 + dx), round(self.py - img.height / 2 + dy)))
 
-        # "Pop" : agrandissement bref et sec
-        self._scaled(base, 1 + 0.07 * math.sin(math.pi * t / 0.28) if t < 0.28 else 1, out)
+    def _exit(self, t):
+        """Sortie commune : la barre remonte un peu et s'efface. -> (decalage vertical, opacite)."""
+        q = max(0.0, (t - (self.duration - 0.45)) / 0.45)
+        return -8 * self.k * q * q, 1 - q
 
-        # Eclair de lumiere en biais qui traverse l'overlay de gauche a droite
-        q = (t - 0.08) / 0.5
-        if 0 < q < 1:
-            bw = (x1 - x0) * 0.22
-            x = x0 - bw + q * (x1 - x0 + 2 * bw)
-            band = Image.new("L", base.size, 0)
-            sk = (y1 - y0) * 0.35
-            ImageDraw.Draw(band).polygon([(x, y0), (x + bw, y0), (x + bw - sk, y1), (x - sk, y1)], fill=210)
-            band = ImageChops.multiply(band.filter(ImageFilter.GaussianBlur(bw * 0.25)), alpha)
-            shine = Image.new("RGBA", base.size, (255, 255, 255, 0))
-            shine.putalpha(band)
-            out.alpha_composite(shine, (p, p))
+    def frame(self):
+        t = self.elapsed()
+        out = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
+        if self.scored:
+            self._scored(out, t)
+        else:
+            self._conceded(out, t)
+        return out, (round(self.cx), 0)
 
-        # Rayons en etoile qui partent du centre, par-dessus l'overlay
-        q = t / 0.6
-        if q < 1:
-            fx = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-            d = ImageDraw.Draw(fx)
-            reach = max(x1 - x0, y1 - y0) / 2 + p * 0.95
-            for i in range(14):
-                a = 2 * math.pi * i / 14 + 0.2
-                r0, r1 = reach * (0.25 + 0.55 * _ease_out(q)), reach * (0.45 + 0.55 * _ease_out(q))
-                color = (GOLD if i % 2 else GREEN)[:3] + (round(230 * (1 - q)),)
-                d.line([(cx + r0 * math.cos(a), cy + r0 * math.sin(a)), (cx + r1 * math.cos(a), cy + r1 * math.sin(a))],
-                       fill=color, width=max(1, round(4 * k * (1 - q) + 1)))
-            out.alpha_composite(fx.filter(ImageFilter.GaussianBlur(1.2 * k)))
+    def _chevron(self, d, x, y, side, a):
+        """Chevron qui pointe vers le score (side = -1 a gauche, 1 a droite), dessine en x2."""
+        k = self.k
+        w, h, th = 15 * k, 21 * k, 9 * k
+        pts = [(-w, -h), (-w + th, -h), (th, 0), (-w + th, h), (-w, h), (0, 0)]
+        d.polygon([(2 * (x - side * px), 2 * (y + py)) for px, py in pts], fill=GREEN[:3] + (round(255 * a),))
 
-        # Etincelles projetees
-        d = ImageDraw.Draw(out)
-        for sp in self.sparks:
-            tt = t - sp["delay"]
-            if tt <= 0:
-                continue
-            dist = sp["v"] / 3 * (1 - math.exp(-3 * tt))
-            x, y = p + sp["x"] + dist * math.cos(sp["a"]), p + sp["y"] + dist * math.sin(sp["a"]) + 60 * k * tt * tt
-            r = sp["r"] * (1 - min(1, tt / self.duration))
-            if r > 0.3:
-                d.ellipse([x - r, y - r, x + r, y + r], fill=sp["color"][:3] + (round(255 * fade),))
-        return out, (p, p)
-
-    def _conceded(self, base, t):
-        k, p = self.k, self.pad
-        _, alpha, red, (x0, y0, x1, y1) = self.cache
-        W, H = base.width + 2 * p, base.height + 2 * p
-        out = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        ix, iy = self.impact
-        hit = 0.2  # le ballon touche le filet
-        fade = 1.0 if t < 0.9 else max(0.0, 1 - (t - 0.9) / (self.duration - 0.9))
-
-        # L'overlay recule sous le choc et rougit un instant
-        tt = t - hit
-        sc = 1 - 0.05 * math.sin(math.pi * tt / 0.35) if 0 < tt < 0.35 else 1
-        tint = 0.28 * _pulse(t, hit + 0.05, 0.2)
-        img = Image.blend(base, red, tint) if tint > 0.01 else base
-        self._scaled(img, sc, out)
-
-        # Filet de but par-dessus l'overlay : il ondule depuis l'impact, puis se calme
-        if t >= hit:
-            amp = 7 * k * math.exp(-(t - hit) * 3.2)
-            mesh = 11 * k
-            lam, speed = 26 * k, 160 * k
-
-            def warp(x, y):
-                dx, dy = x - ix, y - iy
-                dist = math.hypot(dx, dy) or 1
-                front = (t - hit) * speed
-                wave = amp * math.exp(-max(0, dist - front) / (18 * k)) * math.sin((dist - front) / lam * 2 * math.pi)
-                return x + dx / dist * wave, y + dy / dist * wave
-
-            layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
-            d = ImageDraw.Draw(layer)
-            step = 5 * k
-            color = (255, 255, 255, 150)
-            w = max(1, round(1.1 * k))
-            y = y0 - (iy - y0) % mesh
-            while y <= y1:
-                pts, x = [], x0
-                while x <= x1 + step:
-                    pts.append(warp(x, y))
-                    x += step
-                d.line(pts, fill=color, width=w)
-                y += mesh
-            x = x0 - (ix - x0) % mesh
-            while x <= x1:
-                pts, y = [], y0
-                while y <= y1 + step:
-                    pts.append(warp(x, y))
-                    y += step
-                d.line(pts, fill=color, width=w)
-                x += mesh
-            layer.putalpha(ImageChops.multiply(layer.getchannel("A"), self.solid).point(lambda v: round(v * fade)))
-            out.alpha_composite(layer, (p, p))
-
-        # Le ballon arrive vers le point d'impact en rapetissant (il rentre dans le filet)
-        fx = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    def _scored(self, out, t):
+        k, cx, py = self.k, self.cx, self.py
+        lift, alpha = self._exit(t)
+        fx = Image.new("RGBA", (self.W * 2, self.H * 2), (0, 0, 0, 0))  # effets en x2 : bords lisses
         d = ImageDraw.Draw(fx)
-        if t < hit + 0.12:
-            q = min(1.0, t / hit)
-            dist = (1 - _ease_out(q)) * (p + max(x1 - x0, y1 - y0) / 2)
-            bx, by = p + ix + dist * math.cos(self.ball_from), p + iy + dist * math.sin(self.ball_from)
-            r = (11 - 5 * q) * k
-            a = round(255 * (1 - max(0.0, t - hit) / 0.12))
-            d.ellipse([bx - r, by - r, bx + r, by + r], fill=(235, 240, 245, a), outline=(30, 40, 60, a),
-                      width=max(1, round(1.5 * k)))
-            d.ellipse([bx - r * 0.35, by - r * 0.35, bx + r * 0.35, by + r * 0.35], fill=(30, 40, 60, a))
-        # Onde rouge a l'impact
-        q = (t - hit) / 0.45
-        if 0 < q < 1:
-            r = (6 + 34 * _ease_out(q)) * k
-            d.ellipse([p + ix - r, p + iy - r, p + ix + r, p + iy + r], outline=RED[:3] + (round(230 * (1 - q)),),
-                      width=max(1, round(3 * k * (1 - q) + 1)))
-        out.alpha_composite(fx)
-        return out, (p, p)
+
+        # Traits de lumiere qui jaillissent du centre, de part et d'autre de la barre
+        q = t / 0.32
+        if q < 2.6:
+            reach = 470 * k * _ease_out(min(1.0, q))
+            a = min(1.0, q * 3) * max(0.0, 1 - max(0.0, q - 1) / 1.6)
+            for width, aa, color in ((9, 0.18, GREEN), (5, 0.35, GREEN), (2.2, 1.0, FG)):
+                d.line([(2 * (cx - reach), 2 * py), (2 * (cx + reach), 2 * py)],
+                       fill=color[:3] + (round(255 * a * aa),), width=round(2 * width * k))
+
+        # Chevrons de chaque cote du score, qui s'allument de l'exterieur vers le score
+        if 0.15 < t < self.duration - 0.3:
+            slide = 24 * k * (1 - _ease_out(min(1.0, (t - 0.15) / 0.4)))
+            fade = min(1.0, (self.duration - 0.3 - t) / 0.4, (t - 0.15) / 0.15)
+            y = self.SCORE_H * k / 2
+            for i in range(3):
+                local = (t - 0.15 - (2 - i) * 0.1) % 0.62
+                a = (0.25 + 0.75 * _pulse(local, 0.1, 0.09)) * fade
+                gap = (self.SCORE_HALF + 22 + i * 26) * k + slide
+                self._chevron(d, cx - gap, y, -1, a)
+                self._chevron(d, cx + gap, y, 1, a)
+
+        # Etincelles : petits traits dans le sens du mouvement, freines puis tombant
+        for sp in self.parts:
+            tt = t - sp["delay"]
+            life = 1 - tt / 1.3
+            if tt <= 0 or life <= 0:
+                continue
+            e = math.exp(-3.2 * tt)
+            x = sp["x"] + sp["vx"] / 3.2 * (1 - e)
+            y = sp["y"] + sp["vy"] / 3.2 * (1 - e) + 160 * k * tt * tt
+            vx, vy = sp["vx"] * e, sp["vy"] * e + 320 * k * tt
+            n = math.hypot(vx, vy) or 1
+            ln = min(14 * k, n * 0.03) + 2 * k
+            d.line([(2 * x, 2 * y), (2 * (x - vx / n * ln), 2 * (y - vy / n * ln))],
+                   fill=sp["color"][:3] + (round(255 * life * alpha),), width=max(1, round(2 * sp["w"])))
+        out.alpha_composite(fx.reduce(2))
+
+        # Barre : arrive en rebondissant, puis un reflet la traverse
+        q = (t - 0.05) / 0.34
+        if q <= 0:
+            return
+        sc = 0.35 + 0.65 * _ease_out_back(min(1.0, q))
+        pill = self.pill
+        s = (t - 0.42) / 0.45
+        if 0 < s < 1:
+            pw, ph = self.pill_size
+            m = self.margin
+            bw = pw * 0.18
+            x = m - bw + s * (pw + 2 * bw)
+            band = Image.new("L", pill.size, 0)
+            ImageDraw.Draw(band).polygon([(x + ph * 0.5, m), (x + ph * 0.5 + bw, m), (x + bw, m + ph), (x, m + ph)],
+                                         fill=150)
+            shine = Image.new("RGBA", pill.size, (255, 255, 255, 0))
+            shine.putalpha(ImageChops.multiply(band.filter(ImageFilter.GaussianBlur(bw * 0.2)), self.pill_mask))
+            pill = pill.copy()
+            pill.alpha_composite(shine)
+        self._place(out, pill, sc, 0, -14 * k * (1 - _ease_out(min(1.0, q))) + lift, min(1.0, q * 2.5) * alpha)
+
+    def _conceded(self, out, t):
+        k, cx, py = self.k, self.cx, self.py
+        lift, alpha = self._exit(t)
+        hit = 0.14  # la barre s'ecrase
+
+        # Lueur rouge sous le score : bat deux fois comme un coeur
+        beat = _pulse(t, hit + 0.04, 0.14) + 0.65 * _pulse(t, hit + 0.5, 0.16) + 0.22 * min(1.0, t / hit)
+        glow = min(1.0, beat) * alpha
+        if glow > 0.02:
+            layer = Image.new("RGBA", (self.W, self.H), RED[:3] + (0,))
+            layer.putalpha(self.glow.point(lambda v: round(v * glow)))
+            out.alpha_composite(layer)
+
+        fx = Image.new("RGBA", (self.W * 2, self.H * 2), (0, 0, 0, 0))  # effets en x2 : bords lisses
+        d = ImageDraw.Draw(fx)
+        # Ligne rouge qui s'etire sous la barre a l'impact
+        q = (t - hit) / 0.5
+        if q > 0:
+            reach = 420 * k * _ease_out(min(1.0, q))
+            a = alpha * (1 if q < 1 else max(0.0, 1 - (q - 1) / 1.4))
+            y = py + self.pill_size[1] / 2 + 12 * k
+            for width, aa in ((7, 0.25), (2, 1.0)):
+                d.line([(2 * (cx - reach), 2 * y), (2 * (cx + reach), 2 * y)], fill=RED[:3] + (round(230 * a * aa),),
+                       width=round(2 * width * k))
+        # Debris qui tombent
+        for sp in self.parts:
+            tt = t - sp["delay"]
+            life = 1 - tt / 1.2
+            if tt <= 0 or life <= 0:
+                continue
+            x, y = sp["x"] + sp["vx"] * tt, sp["y"] + sp["vy"] * tt + 420 * k * tt * tt
+            a = math.radians(sp["rot"] + sp["spin"] * tt)
+            ca, sa = math.cos(a), math.sin(a)
+            pts = [(0, -sp["s"]), (sp["s"] * 0.8, sp["s"] * 0.6), (-sp["s"] * 0.7, sp["s"] * 0.5)]
+            d.polygon([(2 * (x + px * ca - qy * sa), 2 * (y + px * sa + qy * ca)) for px, qy in pts],
+                      fill=sp["color"][:3] + (round(255 * life * alpha),))
+        out.alpha_composite(fx.reduce(2))
+
+        # Barre : s'ecrase (arrive trop grand), tremble, parasites
+        if t <= 0:
+            return
+        q = min(1.0, t / hit)
+        sc = 1.6 - 0.6 * q * q
+        tt = t - hit
+        dx = 11 * k * math.sin(tt * 2 * math.pi * 9) * math.exp(-tt * 4.5) if tt > 0 else 0
+        pill = self.pill
+        if 0 < tt < 0.45 and int(t * 30) % 3 != 2:
+            pill = self._glitch(pill, int(t * 30))
+        self._place(out, pill, sc, dx, lift, min(1.0, q * 1.5) * alpha)
+
+    def _glitch(self, pill, seed):
+        """Parasites : bandes horizontales decalees et images fantomes rouge / cyan."""
+        rnd = random.Random(seed)
+        k = self.k
+        g = Image.new("RGBA", pill.size, (0, 0, 0, 0))
+        for color, off in ((RED[:3], -5 * k), ((40, 220, 255), 5 * k)):
+            ghost = Image.new("RGBA", pill.size, color + (0,))
+            ghost.putalpha(pill.getchannel("A").point(lambda v: v * 2 // 5))
+            g.alpha_composite(ghost, (round(off), 0))
+        g.alpha_composite(pill)
+        for _ in range(3):
+            y0 = rnd.randrange(0, pill.height - 4)
+            y1 = min(pill.height, y0 + rnd.randrange(3, max(4, round(14 * k))))
+            band = g.crop((0, y0, pill.width, y1))
+            g.paste((0, 0, 0, 0), (0, y0, pill.width, y1))
+            g.paste(band, (round(rnd.uniform(-14, 14) * k), y0), band)  # paste : le decalage peut etre < 0
+        return g
 
 
 def animation(kind, k):
-    """Animation de fin de match ("w", "l") ou de but ("gw", "gl")."""
-    return GoalAnimation(kind, k) if kind in GoalAnimation.DURATION else MatchAnimation(kind, k)
+    """Animation de fin de match ("w", "l") sur l'overlay."""
+    return MatchAnimation(kind, k)
 
 
 # --------------------------------------------------------------------------

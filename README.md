@@ -10,7 +10,7 @@ nothing is injected into the game and nothing touches the anti-cheat. Everything
 
 **▶ Demo video:**
 
-[![RL Stats demo video](docs/video_en.jpg)](https://youtu.be/coK2br0heKU)
+[![RL Stats demo video](docs/video_en.jpg)](https://youtu.be/Wo7JtuIgp4Q)
 
 > 🇫🇷 [Version française plus bas](#-en-français)
 
@@ -40,16 +40,15 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 | **History & progress** | Every game is saved: daily win-rate chart, best streak, MVPs, averages, game list, CSV export. |
 | **Opponents met before** | During the game, small chips next to the overlay show the opponents you already played, with your record. Teammates are left out (the game doesn't say who is in your party). |
 | **Session goal & timer** | e.g. *10 wins tonight*, with progress shown on the overlay, and how long you've been playing. |
-| **Animations & sounds** | Confetti on wins, shake on losses, a short alert on every goal scored or conceded, optional sounds (built-in or your own MP3 / WAV). |
+| **Animations & sounds** | Confetti on wins, shake on losses, an animation under the in-game score on every goal scored or conceded, optional sounds (off by default; built-in or your own MP3 / WAV). |
 | **Customization** | 4 styles (scoreboard / minimal × curved / straight), size, colors, opacity. |
 | **Multi-monitor & ultrawide** | Follows the game window on any screen, any resolution, windowed or borderless. |
 | **Streamer mode** | A local page to add as an **OBS browser source**. Off by default. |
 | **Tray icon & taskbar button** | Click to hide / show the overlay, right-click for the menu. |
-| **Trophies & records** | 26 trophies (first flip reset, aerial goal, hat trick, 140 km/h goal, 10 win streak…) and personal records, announced on the overlay. |
 | **Session card** | One click copies an image of your session to the clipboard, ready to paste in Discord. |
 | **Advanced stats** | Kickoffs won, average boost, time at 0 boost, supersonic time, map of where your goals go in, for a period or a single game. |
 | **Discord status** | Shows your mode, session score and streak on your Discord profile (Rich Presence, off by default). |
-| **Tilt alert** | Suggests a break after 3 losses in a row or 2 hours of play (can be turned off). |
+| **Tilt alert** | Suggests a break after 3 losses in a row or 2 hours of play (off by default). |
 | **Smart display** | Hides itself when the game is closed or minimized, resumes your session if restarted within 2 h, can start with Windows and stay hidden until the game starts. |
 | **Update notifications** | Tells you when a new version is available on GitHub. |
 | **English / French** | Follows the Windows language, can be changed in Settings. |
@@ -59,8 +58,8 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 | History | Settings |
 |---|---|
 | ![History window](docs/history.png) | ![Settings window](docs/settings.png) |
-| **Trophies & records** | **Analysis** |
-| ![Trophies](docs/trophies.png) | ![Analysis](docs/analysis.png) |
+| **Analysis** | |
+| ![Analysis](docs/analysis.png) | |
 
 ## Usage
 
@@ -92,7 +91,7 @@ in the players menu.
 sent anywhere. The only network request is the update check, which asks GitHub for the latest
 release version (can be turned off in Settings → System).
 
-**Wasn't it called RL Overlay?** Yes, until version 1.1. Your settings, history and trophies are
+**Wasn't it called RL Overlay?** Yes, until version 1.1. Your settings and history are
 migrated automatically from `%APPDATA%\RL Overlay` on first launch.
 
 **Some advanced stats are missing.** Boost stats are only sent by the game for your own team, and
@@ -125,7 +124,6 @@ build.bat
 | `rl_stats.pyw` | Entry point: Stats API connection, match tracking, overlay window, tray icon, hotkeys |
 | `designs.py` | Overlay styles, animations and match summary card, drawn with Pillow |
 | `history.py` | Match history (`matches.json`) and statistics |
-| `achievements.py` | Trophies and personal records |
 | `discord_rpc.py` | Discord status (Rich Presence) |
 | `synth.py` | Built-in sounds (win, loss, goals), synthesized: no audio file shipped |
 | `ui_windows.py` | Settings and History windows (Tkinter) |
@@ -134,6 +132,7 @@ build.bat
 | `i18n.py` | English / French texts |
 | `rl_stats.spec`, `build.bat` | PyInstaller build |
 | `packaging/` | Readme files shipped in the zip |
+| `tools/demo.py` | Scripted demo (fake games, captions) used to record the YouTube video |
 
 ## Code signing policy
 
@@ -182,7 +181,7 @@ Rocket League is a trademark of Psyonix LLC.*
 
 **▶ Vidéo de démo :**
 
-[![Vidéo de démo de RL Stats](docs/video_fr.jpg)](https://youtu.be/coK2br0heKU)
+[![Vidéo de démo de RL Stats](docs/video_fr.jpg)](https://youtu.be/Wo7JtuIgp4Q)
 
 👉 **[Télécharger la dernière version](https://github.com/benguedj/RL_Stats/releases/latest)**, puis :
 
@@ -193,9 +192,9 @@ Rocket League is a trademark of Psyonix LLC.*
 
 **Fonctionnalités** : compteur par mode (1v1, 2v2, 3v3, 4v4), résumé après chaque match, historique
 et graphique de progression, adversaires déjà croisés (affichés pendant le match), objectif et chrono de session,
-alerte à chaque but, animations et sons (intégrés ou tes propres MP3 / WAV),
+animation sous le score à chaque but, animations et sons (intégrés ou tes propres MP3 / WAV),
 personnalisation (designs, couleurs, opacité), multi-écrans et ultra-larges, mode streamer (OBS),
-icône près de l'horloge, trophées et records, carte de session à coller sur Discord, statut Discord, stats avancées
+icône près de l'horloge, carte de session à coller sur Discord, statut Discord, stats avancées
 (engagements, boost, carte des buts, par période ou par match), alerte tilt, masquage auto quand le jeu est fermé, reprise de session,
 démarrage avec Windows, notification des mises à jour, français / anglais.
 

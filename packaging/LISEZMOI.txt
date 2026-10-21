@@ -40,15 +40,13 @@ FONCTIONNALITÉS
 - Multi-écrans et écrans ultra-larges : l'overlay suit la fenêtre du jeu,
   sur n'importe quel écran. On peut aussi choisir l'écran à la main.
 - Mode streamer : une page à ajouter dans OBS (source navigateur).
-- Trophées et records personnels (flip reset, but aérien, coup du chapeau...),
-  annoncés sur l'overlay et listés dans Historique > Trophées.
 - Carte de session : clic droit > "Copier la carte de session", puis Ctrl+V
   dans Discord.
 - Stats avancées (Historique > Analyse) : engagements gagnés, boost moyen,
   temps à 0 boost, temps en supersonique, carte des buts.
 - Statut Discord : ton mode, ton score de session et ta série sur ton profil
   Discord (Paramètres > Fonctions, désactivé par défaut).
-- Alerte tilt : pause conseillée après 3 défaites d'affilée ou 2 h de jeu.
+- Alerte tilt : pause conseillée après 3 défaites d'affilée ou 2 h de jeu (désactivée par défaut).
 - Masquage automatique quand le jeu est fermé ou réduit, reprise de la
   session si l'app est relancée dans les 2 h, démarrage avec Windows.
 - Notification quand une nouvelle version est disponible.
