@@ -17,7 +17,8 @@ SETUP
 3. Start Rocket League (or restart it if it was already running: the game only
    reads its config at startup). The overlay enables the Stats API by itself.
 4. In the game's video settings, set the display mode to "Borderless"
-   (in fullscreen, the overlay cannot be drawn over the game).
+   (in fullscreen, the overlay cannot be drawn over the game). RL Stats
+   checks this setting and tells you if the game is in fullscreen.
 
 Once the "WAITING FOR GAME" banner disappears, the overlay is connected.
 
@@ -30,6 +31,10 @@ FEATURES
   shooting accuracy, fastest goal and MVP badge.
 - History and progress: every game is saved. Daily win rate chart, best
   streak, MVPs, averages, CSV export.
+- Teammates (History > Teammates): your win rate with each teammate compared
+  to your average, your best duo and most frequent teammate.
+- Time of day (History > Time of day): win rate by hour and by day of the
+  week, with your best and worst time slots.
 - Players met before: the overlay tells you when you run into a player you
   already played with or against, with your record.
 - Session goal: e.g. 10 wins, with progress shown.

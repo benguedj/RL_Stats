@@ -19,7 +19,8 @@ INSTALLATION
 3. Lance Rocket League (ou relance-le s'il était déjà ouvert : le jeu ne lit
    sa configuration qu'au démarrage). L'overlay active la Stats API tout seul.
 4. Dans les options vidéo du jeu, mets l'affichage en "Fenêtré sans bordure"
-   (en plein écran, l'overlay ne peut pas passer devant le jeu).
+   (en plein écran, l'overlay ne peut pas passer devant le jeu). RL Stats
+   vérifie ce réglage et te prévient si le jeu est en plein écran.
 
 Quand le bandeau "EN ATTENTE DU JEU" disparaît, l'overlay est connecté.
 
@@ -32,6 +33,10 @@ FONCTIONNALITÉS
   démolitions, précision, but le plus rapide et badge MVP.
 - Historique et progression : tous tes matchs sont enregistrés. Graphique du
   taux de victoire par jour, meilleure série, MVP, moyennes, export CSV.
+- Coéquipiers (Historique > Coéquipiers) : ton taux de victoire avec chacun,
+  comparé à ta moyenne, ton meilleur duo et ton coéquipier le plus fréquent.
+- Horaires (Historique > Horaires) : taux de victoire selon l'heure et le jour
+  de la semaine, avec ton meilleur et ton moins bon créneau.
 - Joueurs déjà croisés : l'overlay te prévient quand tu retombes sur un joueur
   déjà rencontré, avec ton bilan face à lui ou avec lui.
 - Objectif de session : par exemple 10 victoires, avec la progression affichée.

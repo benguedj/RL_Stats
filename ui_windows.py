@@ -14,6 +14,8 @@ EDGE = "#344666"
 FG = "#f1f5f9"
 MUTED = "#8c98ad"
 GRID = "#1e2a44"
+OK = "#2ee66b"
+WARN = "#f59e0b"
 TITLE_FONT = ("Bahnschrift SemiBold", 13)
 BODY_FONT = ("Segoe UI", 10)
 NUM_FONT = ("Bahnschrift SemiBold", 20)
@@ -21,16 +23,24 @@ NUM_FONT = ("Bahnschrift SemiBold", 20)
 COLOR_PRESETS = [("#2ee66b", "#ff4d4d"), ("#3b82f6", "#f97316"), ("#22d3ee", "#e879f9"), ("#facc15", "#a855f7")]
 
 
+def short(name, n=16):
+    """Pseudo raccourci pour tenir dans une tuile."""
+    return name if len(name) <= n else name[:n - 1] + "…"
+
+
 def hex_to_rgb(h):
     h = h.lstrip("#")
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
-def _dark_window(root, title, geometry):
+def _dark_window(root, title, size, area):
+    """Fenetre sombre de size = (largeur, hauteur), centree sur area = (x, y, l, h) : l'ecran du jeu."""
     win = tk.Toplevel(root)
     win.title(title)
     win.configure(bg=BG)
-    win.geometry(geometry)
+    ax, ay, aw, ah = area
+    w, h = min(size[0], aw - 40), min(size[1], ah - 80)  # place pour la barre de titre et celle des taches
+    win.geometry(f"{w}x{h}+{ax + (aw - w) // 2}+{ay + max(0, (ah - h) // 2 - 20)}")
     win.attributes("-topmost", True)
     try:
         win.iconbitmap(root.iconbitmap())
@@ -124,13 +134,46 @@ def _option(parent, var, choices, command):
 
 
 # --------------------------------------------------------------------------
+# Accueil
+# --------------------------------------------------------------------------
+
+def show_notice(root, area, title, heading, body, on_close=lambda: None, color=FG):
+    """Petite fenetre d'information (titre, texte, bouton Compris), centree sur l'ecran du jeu."""
+    win = _dark_window(root, title, (460, 250), area)
+    win.resizable(False, False)
+
+    def close():
+        win.destroy()
+        on_close()
+
+    win.protocol("WM_DELETE_WINDOW", close)
+    tk.Label(win, text=heading.upper(), bg=BG, fg=color, font=TITLE_FONT,
+             anchor="w").pack(fill="x", padx=22, pady=(22, 10))
+    tk.Label(win, text=body, bg=BG, fg=FG, font=BODY_FONT, justify="left", anchor="w",
+             wraplength=416).pack(fill="x", padx=22)
+    _button(win, T("welcome_ok"), close).pack(side="bottom", anchor="e", padx=22, pady=20)
+    win.focus_force()
+    return win
+
+
+def show_welcome(root, area, display_mode, on_close=lambda: None):
+    """Premier lancement. display_mode = mode d'affichage lu dans la config du jeu (None si inconnu) :
+    s'il convient deja, on le dit ; sinon on explique quoi changer."""
+    if display_mode in ("borderless", "windowed"):
+        return show_notice(root, area, T("welcome_title"), T("welcome_ready_heading"), T("welcome_ready_body"),
+                           on_close, color=OK)
+    return show_notice(root, area, T("welcome_title"), T("welcome_heading"), T("welcome_body"), on_close,
+                       color=WARN if display_mode == "fullscreen" else FG)
+
+
+# --------------------------------------------------------------------------
 # Parametres
 # --------------------------------------------------------------------------
 
 class SettingsWindow:
     def __init__(self, app):
         self.app = app
-        self.win = _dark_window(app.root, T("s_title"), "520x780")
+        self.win = _dark_window(app.root, T("s_title"), (520, 780), app.viewport)
         self.win.protocol("WM_DELETE_WINDOW", self.close)
         self.build()
 
@@ -345,8 +388,8 @@ class HistoryWindow:
         self.mode = None
         self.tab = "overview"
         self.analysis_match = None  # "t" du match choisi dans l'onglet Analyse (None = tous)
-        self.win = _dark_window(app.root, T("h_title"), "860x640")
-        self.win.minsize(720, 520)
+        self.win = _dark_window(app.root, T("h_title"), (940, 660), app.viewport)
+        self.win.minsize(800, 540)
         self.win.protocol("WM_DELETE_WINDOW", self.close)
         self.build()
 
@@ -374,7 +417,8 @@ class HistoryWindow:
         top = tk.Frame(self.win, bg=BG)
         top.pack(fill="x", padx=16, pady=(14, 6))
         self._segmented(top, [("overview", T("h_overview")), ("matches", T("h_matches_tab")),
-                              ("players", T("h_players")), ("analysis", T("h_analysis"))], self.tab, self.set_tab).pack(side="left")
+                              ("players", T("h_players")), ("mates", T("h_mates")), ("hours", T("h_hours")),
+                              ("analysis", T("h_analysis"))], self.tab, self.set_tab).pack(side="left")
         _button(top, T("h_export"), self.export, bg=PANEL).pack(side="right")
         _button(top, T("h_share"), self.app.share_card, bg=PANEL).pack(side="right", padx=(0, 6))
 
@@ -406,7 +450,28 @@ class HistoryWindow:
             child.destroy()
         matches = self.history.filter(self.period, self.mode)
         {"overview": self.show_overview, "matches": self.show_matches, "players": self.show_players,
-         "analysis": self.show_analysis}[self.tab](matches)
+         "mates": self.show_mates, "hours": self.show_hours, "analysis": self.show_analysis}[self.tab](matches)
+
+    def _tiles(self, items):
+        """Rangee de tuiles [(titre, valeur, sous-titre)]."""
+        tiles = tk.Frame(self.content, bg=BG)
+        tiles.pack(fill="x")
+        for title, value, sub in items:
+            tile = tk.Frame(tiles, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
+            tile.pack(side="left", fill="both", expand=True, padx=(0, 6))
+            tk.Label(tile, text=title, bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=10,
+                                                                                                  pady=(8, 0))
+            tk.Label(tile, text=value, bg=PANEL, fg=FG, font=NUM_FONT, anchor="w").pack(fill="x", padx=10)
+            tk.Label(tile, text=sub, bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=10,
+                                                                                                pady=(0, 8))
+        return tiles
+
+    def _chart(self, title, bars, few=0):
+        """Titre + graphique de taux de victoire (voir draw_chart)."""
+        tk.Label(self.content, text=title, bg=BG, fg=FG, font=TITLE_FONT, anchor="w").pack(fill="x", pady=(14, 4))
+        chart = tk.Canvas(self.content, bg=PANEL, highlightthickness=1, highlightbackground=EDGE, height=120)
+        chart.pack(fill="both", expand=True)
+        chart.bind("<Configure>", lambda e: self.draw_chart(chart, bars, few))
 
     # --- Progression --------------------------------------------------------
 
@@ -415,42 +480,33 @@ class HistoryWindow:
             tk.Label(self.content, text=T("h_no_data"), bg=BG, fg=MUTED, font=TITLE_FONT).pack(expand=True)
             return
         s = History.summary(matches)
-        tiles = tk.Frame(self.content, bg=BG)
-        tiles.pack(fill="x")
         fastest = f"{round(s['fastest'])} km/h" if s["fastest"] else "–"
-        for title, value, sub in (
-                (T("h_games"), str(s["n"]), T("h_wl", w=s["w"], l=s["l"])),
-                (T("h_winrate"), f"{s['pct']} %", ""),
-                (T("h_best_streak"), str(s["best_streak"]), ""),
-                (T("h_mvp"), str(s["mvp"]), ""),
-                (T("h_fastest"), fastest, ""),
-        ):
-            tile = tk.Frame(tiles, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
-            tile.pack(side="left", fill="both", expand=True, padx=(0, 6))
-            tk.Label(tile, text=title, bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=10,
-                                                                                                  pady=(8, 0))
-            tk.Label(tile, text=value, bg=PANEL, fg=FG, font=NUM_FONT, anchor="w").pack(fill="x", padx=10)
-            tk.Label(tile, text=sub, bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=10,
-                                                                                                pady=(0, 8))
+        self._tiles([
+            (T("h_games"), str(s["n"]), T("h_wl", w=s["w"], l=s["l"])),
+            (T("h_winrate"), f"{s['pct']} %", ""),
+            (T("h_best_streak"), str(s["best_streak"]), ""),
+            (T("h_mvp"), str(s["mvp"]), ""),
+            (T("h_fastest"), fastest, ""),
+        ])
         per_game = T("h_per_game_val", g=f"{s['goals']:.1f}", a=f"{s['assists']:.1f}", s=f"{s['saves']:.1f}")
         tk.Label(self.content, text=f"{T('h_per_game')} : {per_game}" if lang() == "fr"
                  else f"{T('h_per_game')}: {per_game}", bg=BG, fg=MUTED, font=BODY_FONT, anchor="w").pack(
             fill="x", pady=(8, 0))
 
-        tk.Label(self.content, text=T("h_chart"), bg=BG, fg=FG, font=TITLE_FONT, anchor="w").pack(fill="x",
-                                                                                                 pady=(14, 4))
-        chart = tk.Canvas(self.content, bg=PANEL, highlightthickness=1, highlightbackground=EDGE)
-        chart.pack(fill="both", expand=True)
         days = History.per_day(matches, self.period)
-        chart.bind("<Configure>", lambda e: self.draw_chart(chart, days))
+        n = len(days)
+        self._chart(T("h_chart"), [(self._day_label(day) if n <= 10 or i in (0, n // 2, n - 1) else "",
+                                    self._day_label(day, long=True), w, l) for i, (day, w, l) in enumerate(days)])
 
-    def draw_chart(self, c, days):
-        """Barres divergentes autour de 50 % : au-dessus = plus de victoires que de defaites."""
+    def draw_chart(self, c, bars, few=0):
+        """Barres divergentes autour de 50 % : au-dessus = plus de victoires que de defaites.
+        bars = [(libelle sous la barre ou "", libelle de l'infobulle, V, D)] ; les barres de moins de
+        `few` matchs sont grisees (trop peu de matchs pour en tirer quelque chose)."""
         c.delete("all")
         W, H = c.winfo_width(), c.winfo_height()
         left, right, top, bottom = 44, 14, 14, 26
         pw, ph = W - left - right, H - top - bottom
-        if pw < 50 or ph < 50 or not days:
+        if pw < 50 or ph < 50 or not bars:
             return
         win_c, loss_c = self.app.store["win_color"], self.app.store["loss_color"]
 
@@ -462,12 +518,12 @@ class HistoryWindow:
             c.create_line(left, y, W - right, y, fill=EDGE if pct == 50 else GRID, width=1)
             c.create_text(left - 8, y, text=f"{pct}%", fill=MUTED, anchor="e", font=("Segoe UI", 8))
 
-        n = len(days)
+        n = len(bars)
         slot = pw / n
         bar_w = max(2, min(28, slot - 2))  # 2 px d'ecart entre les barres
         base = y_of(50)
-        self.chart_hits = []
-        for i, (day, w, l) in enumerate(days):
+        hits = []
+        for i, (label, tip_label, w, l) in enumerate(bars):
             x = left + slot * i + (slot - bar_w) / 2
             if w + l:
                 pct = w * 100 / (w + l)
@@ -475,22 +531,21 @@ class HistoryWindow:
                 if abs(y - base) < 2:  # 50 % pile : petit trait neutre
                     c.create_rectangle(x, base - 1, x + bar_w, base + 1, fill=MUTED, width=0)
                 else:
-                    c.create_rectangle(x, min(y, base), x + bar_w, max(y, base),
-                                       fill=win_c if pct > 50 else loss_c, width=0)
-                self.chart_hits.append((left + slot * i, left + slot * (i + 1), day, w, l))
-            if n <= 10 or i in (0, n // 2, n - 1):
-                c.create_text(x + bar_w / 2, H - bottom + 12, text=self._day_label(day), fill=MUTED,
-                              font=("Segoe UI", 8))
+                    color = EDGE if w + l < few else win_c if pct > 50 else loss_c
+                    c.create_rectangle(x, min(y, base), x + bar_w, max(y, base), fill=color, width=0)
+                hits.append((left + slot * i, left + slot * (i + 1), tip_label, w, l))
+            if label:
+                c.create_text(x + bar_w / 2, H - bottom + 12, text=label, fill=MUTED, font=("Segoe UI", 8))
 
         tip = c.create_text(0, 0, text="", fill=FG, font=("Segoe UI", 9), anchor="sw", state="hidden")
         tip_bg = c.create_rectangle(0, 0, 0, 0, fill=BG, outline=EDGE, state="hidden")
         cross = c.create_line(0, top, 0, top + ph, fill=EDGE, state="hidden")
 
         def hover(e):
-            for x0, x1, day, w, l in self.chart_hits:
+            for x0, x1, tip_label, w, l in hits:
                 if x0 <= e.x < x1:
-                    c.itemconfigure(tip, text=T("h_chart_tip", day=self._day_label(day, long=True),
-                                                p=round(w * 100 / (w + l)), w=w, l=l), state="normal")
+                    c.itemconfigure(tip, text=T("h_chart_tip", day=tip_label, p=round(w * 100 / (w + l)), w=w, l=l),
+                                    state="normal")
                     c.coords(cross, (x0 + x1) / 2, top, (x0 + x1) / 2, top + ph)
                     c.itemconfigure(cross, state="normal")
                     c.tag_lower(cross)
@@ -562,7 +617,7 @@ class HistoryWindow:
         players = History.players_of(matches)
         ranked = sorted(players.items(), key=lambda kv: (-kv[1]["n"], -kv[1]["last"]))
         fmt = "%d/%m/%Y" if lang() == "fr" else "%Y-%m-%d"
-        wl = "{}V {}D" if lang() == "fr" else "{}W {}L"
+        wl = "{} W · {} L"  # W / L dans toutes les langues, comme sur l'overlay
 
         def fill(*_):
             q = query.get().strip().lower()
@@ -579,6 +634,85 @@ class HistoryWindow:
         fill()
         tree.bind("<Double-1>", lambda e: tree.focus() and self.app.open_player(tree.focus(),
                                                                                  players[tree.focus()]["name"]))
+
+    # --- Coequipiers ---------------------------------------------------------
+
+    MIN_DUO = 5  # matchs ensemble pour etre "meilleur duo"
+    FEW = 3      # en dessous, une ligne ou une barre est grisee
+
+    def show_mates(self, matches):
+        mates = History.teammates(matches)
+        if not mates:
+            tk.Label(self.content, text=T("h_no_mates"), bg=BG, fg=MUTED, font=TITLE_FONT).pack(expand=True)
+            return
+        avg = sum(1 for m in matches if m["won"]) * 100 / len(matches)
+
+        def pct(p):
+            return p["w"] * 100 / (p["w"] + p["l"])
+
+        def sub(p):
+            return T("h_pct_games", p=round(pct(p)), n=p["w"] + p["l"])
+
+        regulars = [p for p in mates if p["w"] + p["l"] >= self.MIN_DUO]
+        best = max(regulars, key=lambda p: (pct(p), p["w"] + p["l"]), default=None)
+        self._tiles([
+            (T("h_best_mate"), short(best["name"]) if best else "–",
+             sub(best) if best else T("h_need_games", n=self.MIN_DUO)),
+            (T("h_frequent_mate"), short(mates[0]["name"]), sub(mates[0])),
+            (T("h_your_avg"), f"{round(avg)} %", T("h_mates_count", n=len(mates))),
+        ])
+        tk.Label(self.content, text=T("h_mates_hint", n=self.FEW), bg=BG, fg=MUTED, font=("Segoe UI", 9),
+                 anchor="w").pack(fill="x", pady=(10, 4))
+        tree = self._tree([("player", T("h_col_player")), ("games", T("h_col_games")),
+                           ("record", T("h_col_record")), ("winrate", T("h_col_winrate")),
+                           ("diff", T("h_col_diff")), ("last", T("h_col_last"))], (220, 70, 110, 90, 110, 120))
+        tree.tag_configure("few", foreground=MUTED)
+        fmt = "%d/%m/%Y" if lang() == "fr" else "%Y-%m-%d"
+        for p in mates:
+            n, diff = p["w"] + p["l"], round(pct(p) - avg)
+            tag = "few" if n < self.FEW else "w" if diff >= 5 else "l" if diff <= -5 else ""
+            tree.insert("", "end", iid=p["id"], tags=(tag,), values=(
+                p["name"], n, f"{p['w']} W · {p['l']} L", f"{round(pct(p))} %", f"{diff:+d} pts",
+                datetime.datetime.fromtimestamp(p["last"]).strftime(fmt)))
+        names = {p["id"]: p["name"] for p in mates}
+        tree.bind("<Double-1>", lambda e: tree.focus() and self.app.open_player(tree.focus(), names[tree.focus()]))
+
+    # --- Horaires -----------------------------------------------------------
+
+    MIN_SLOT = 6  # matchs dans un creneau de 2 h pour le classer
+    MIN_DAY = 5
+
+    def show_hours(self, matches):
+        if not matches:
+            tk.Label(self.content, text=T("h_no_data"), bg=BG, fg=MUTED, font=TITLE_FONT).pack(expand=True)
+            return
+        slots = History.slots(matches, 2, self.MIN_SLOT)
+        days = History.by_weekday(matches)
+        names = T("h_weekdays").split(",")
+
+        def slot_tile(title, slot):
+            if not slot:
+                return title, "–", T("h_not_enough")
+            h, w, l = slot
+            return (title, T("h_slot", a=h, b=(h + 2) % 24),
+                    T("h_pct_games", p=round(w * 100 / (w + l)), n=w + l))
+
+        ranked_days = sorted(((w * 100 / (w + l), w + l, i) for i, (w, l) in enumerate(days)
+                              if w + l >= self.MIN_DAY), reverse=True)
+        best_day = ranked_days[0] if ranked_days else None
+        self._tiles([
+            slot_tile(T("h_best_slot"), slots[0] if slots else None),
+            # Le moins bon n'a de sens que s'il y a au moins deux creneaux a comparer
+            slot_tile(T("h_worst_slot"), slots[-1] if len(slots) > 1 else None),
+            (T("h_best_day"), names[best_day[2]] if best_day else "–",
+             T("h_pct_games", p=round(best_day[0]), n=best_day[1]) if best_day else T("h_not_enough")),
+        ])
+        tk.Label(self.content, text=T("h_hours_hint", n=self.FEW), bg=BG, fg=MUTED, font=("Segoe UI", 9),
+                 anchor="w").pack(fill="x", pady=(10, 0))
+        hours = History.by_hour(matches)
+        self._chart(T("h_by_hour"), [(T("h_hour", h=h) if h % 3 == 0 else "", T("h_hour", h=h), w, l)
+                                     for h, (w, l) in enumerate(hours)], self.FEW)
+        self._chart(T("h_by_day"), [(name[:3], name, w, l) for name, (w, l) in zip(names, days)], self.FEW)
 
     # --- Analyse (engagements, boost, carte des buts) -----------------------
 
@@ -617,28 +751,19 @@ class HistoryWindow:
         if not (sum(kick) or boosts or spots):
             tk.Label(self.content, text=T("h_no_adv"), bg=BG, fg=MUTED, font=BODY_FONT).pack(expand=True)
             return
-        tiles = tk.Frame(self.content, bg=BG)
-        tiles.pack(fill="x")
 
         def avg(key, items=None):
             items = boosts if items is None else items
             return sum(b[key] for b in items) / len(items) if items else None
 
         decided = kick[0] + kick[1]
-        for title, value, sub in (
-                (T("h_kickoffs"), f"{round(kick[0] * 100 / decided)} %" if decided else "–",
-                 T("h_kickoffs_sub", w=kick[0], l=kick[1], n=kick[2])),
-                (T("h_boost"), f"{avg('avg'):.0f}" if boosts else "–", ""),
-                (T("h_zero"), f"{avg('zero', zeros):.0f} %" if zeros else "–", ""),
-                (T("h_superso"), f"{avg('superso'):.0f} %" if boosts else "–", ""),
-        ):
-            tile = tk.Frame(tiles, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
-            tile.pack(side="left", fill="both", expand=True, padx=(0, 6))
-            tk.Label(tile, text=title, bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=10,
-                                                                                                  pady=(8, 0))
-            tk.Label(tile, text=value, bg=PANEL, fg=FG, font=NUM_FONT, anchor="w").pack(fill="x", padx=10)
-            tk.Label(tile, text=sub, bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=10,
-                                                                                                pady=(0, 8))
+        self._tiles([
+            (T("h_kickoffs"), f"{round(kick[0] * 100 / decided)} %" if decided else "–",
+             T("h_kickoffs_sub", w=kick[0], l=kick[1], n=kick[2])),
+            (T("h_boost"), f"{avg('avg'):.0f}" if boosts else "–", ""),
+            (T("h_zero"), f"{avg('zero', zeros):.0f} %" if zeros else "–", ""),
+            (T("h_superso"), f"{avg('superso'):.0f} %" if boosts else "–", ""),
+        ])
         tk.Label(self.content, text=T("h_goal_map"), bg=BG, fg=FG, font=TITLE_FONT, anchor="w").pack(fill="x",
                                                                                                     pady=(14, 0))
         tk.Label(self.content, text=T("h_goal_map_sub", n=len(spots)), bg=BG, fg=MUTED, font=("Segoe UI", 9),

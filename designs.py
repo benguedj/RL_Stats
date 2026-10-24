@@ -219,15 +219,40 @@ def _sub_img(text, px, max_w=None):
         px -= 1
 
 
-def _sub(img, state, px, center, opacity=1.0, max_w=None):
-    """Sous-titre (mode, matchs ou chrono). Avec state["sub_slot"] (une liste), il n'est pas dessine :
-    sa place et sa police y sont notees, et paste_sub l'ajoute ensuite. L'appli peut ainsi redessiner
-    le chrono seul chaque seconde au lieu de tout l'overlay."""
+def _clock_of(text):
+    """Chrono en fin de sous-titre ("12:34"), ou ""."""
+    m = _CLOCK.search(text or "")
+    return m.group() if m else ""
+
+
+def _sub(img, state, px, center, opacity=1.0, max_w=None, clock_only=False):
+    """Sous-titre (mode, matchs ou chrono ; le chrono seul avec clock_only). Avec state["sub_slot"]
+    (une liste), il n'est pas dessine : sa place et sa police y sont notees, et paste_sub l'ajoute
+    ensuite. L'appli peut ainsi redessiner le chrono seul chaque seconde au lieu de tout l'overlay."""
     slot = state.get("sub_slot")
     if slot is not None:
-        slot.append((px, max_w, center, opacity))
+        slot.append((px, max_w, center, opacity, clock_only))
         return
-    paste_center(img, _sub_img(state["sub"], px, max_w), center)
+    text = _clock_of(state["sub"]) if clock_only else state["sub"]
+    paste_center(img, _sub_img(text, px, max_w), center)
+
+
+CLOCK_ROW = 19  # hauteur reservee au chrono des designs minimalistes (pastille + marge)
+
+
+def _clock_pill(img, state, s, center, max_w=None):
+    """Chrono de session des designs minimalistes, dans une petite pastille sombre. La pastille est
+    taillee pour le format affiche (chiffres larges) : elle ne bouge pas d'une seconde a l'autre."""
+    clock = _clock_of(state.get("sub"))
+    if not clock:
+        return
+    px = round(11 * s)
+    t = _sub_img(re.sub(r"\d", "8", clock), px, max_w)
+    cx, cy = center
+    w, h = t.width + 14 * s, 16 * s
+    ImageDraw.Draw(img).rounded_rectangle([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], radius=h / 2,
+                                          fill=PANEL, outline=EDGE, width=max(1, round(1.2 * s)))
+    _sub(img, state, px, center, max_w=max_w, clock_only=True)
 
 
 def paste_sub(base, slot, text):
@@ -236,8 +261,8 @@ def paste_sub(base, slot, text):
     grille alignee sur celle du rendu). Renvoie une copie ; base sans emplacement = inchangee."""
     if not slot:
         return base
-    px, max_w, (cx, cy), opacity = slot[0]
-    t = _sub_img(text, px, max_w)
+    px, max_w, (cx, cy), opacity, clock_only = slot[0]
+    t = _sub_img(_clock_of(text) if clock_only else text, px, max_w)
     x0, y0 = round(cx - t.width / 2), round(cy - t.height / 2)  # comme paste_center
     gx, gy = x0 - x0 % SS, y0 - y0 % SS
     w, h = math.ceil((x0 + t.width - gx) / SS), math.ceil((y0 + t.height - gy) / SS)
@@ -400,7 +425,9 @@ def render_mini_arc(state, k, hover=False):
     s = k * SS
     end_r = (MINI_R_OUT - MINI_R_IN) / 2
     low = math.degrees(math.asin(max(0.0, (MINI_R_IN * math.sin(math.radians(MINI_SPAN[1])) - end_r) / MINI_R_IN)))
-    w_px, h_px, cx, cy = _arc_canvas(k, MINI_R_OUT, MINI_STRIP_OUT, low, MINI_R_IN)
+    shift = CLOCK_ROW + 3 if _clock_of(state.get("sub")) else 0  # chrono contre l'arc, bandeau d'info au-dessus
+    strip_in, strip_out = MINI_STRIP_IN + shift, MINI_STRIP_OUT + shift
+    w_px, h_px, cx, cy = _arc_canvas(k, MINI_R_OUT, strip_out, low, MINI_R_IN)
     W, H = w_px * SS, h_px * SS
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     r0, r1 = MINI_R_IN * s, MINI_R_OUT * s
@@ -427,10 +454,11 @@ def render_mini_arc(state, k, hover=False):
         d.line([_pt(cx, cy, r0 + 8 * s, angle), _pt(cx, cy, r1 - 8 * s, angle)], fill=EDGE,
                width=max(1, round(1.5 * s)))
 
+    _clock_pill(img, state, s, (cx, cy - (MINI_R_OUT + 13) * s))
     if state.get("info"):
-        _arc_strip(img, state["info"], cx, cy, s, MINI_STRIP_IN, MINI_STRIP_OUT, 18)
+        _arc_strip(img, state["info"], cx, cy, s, strip_in, strip_out, 18)
 
-    buttons = draw_buttons(d, cx, cy - (MINI_STRIP_OUT + 8) * s, s) if hover else {}
+    buttons = draw_buttons(d, cx, cy - (strip_out + 8) * s, s) if hover else {}
     return finish(img, w_px, h_px), (w_px / 2, cy / SS), buttons
 
 
@@ -499,8 +527,9 @@ def render_mini(state, k, hover=False):
     s = k * SS
     BW, BH, CTRL = 170, 34, 24
     top_u = CTRL + 10
+    clock_h = CLOCK_ROW if _clock_of(state.get("sub")) else 0  # chrono sous la pastille, puis l'info
     w_px = round(max(BW, BUTTONS_W + 4) * k)  # assez large pour la rangee de boutons
-    h_px = round((top_u + BH + 22) * k)
+    h_px = round((top_u + BH + 22 + clock_h) * k)
     W, H = w_px * SS, h_px * SS
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cx, top = W / 2, top_u * s
@@ -523,11 +552,12 @@ def render_mini(state, k, hover=False):
     for sx in (x0 + 55 * s, x1 - 55 * s):
         d.line([(sx + 3 * s, y0 + 8 * s), (sx - 3 * s, y1 - 8 * s)], fill=EDGE, width=max(1, round(1.5 * s)))
 
+    _clock_pill(img, state, s, (cx, y1 + 11 * s))
     info = state.get("info")
     if info:
         text, color, filled = info
         t = text_img([(text, font(round(11 * s), SEMI), PANEL[:3] + (255,) if filled else color, 0)], shear=0)
-        ty = y1 + 12 * s
+        ty = y1 + (12 + clock_h) * s
         d.rounded_rectangle([cx - t.width / 2 - 8 * s, ty - 8 * s, cx + t.width / 2 + 8 * s, ty + 8 * s],
                             radius=8 * s, fill=color if filled else PANEL)
         paste_center(img, t, (cx, ty))
@@ -633,7 +663,8 @@ def render_mini_v(state, k, hover=False):
     s = k * SS
     PW, PH = 50, 176
     info = state.get("info")
-    h_u = max(PH + 24, BUTTONS_H, _v_strip_len(info, s) / s) + 8
+    clock_h = CLOCK_ROW + 2 if _clock_of(state.get("sub")) else 0  # chrono sous la languette
+    h_u = max(PH + 24 + 2 * clock_h, BUTTONS_H, _v_strip_len(info, s) / s) + 8
     w_u = V_SIDE + V_BAND + 8 + PW
     w_px, h_px = round(w_u * k), round(h_u * k)
     W, H = w_px * SS, h_px * SS
@@ -658,6 +689,7 @@ def render_mini_v(state, k, hover=False):
     paste_center(img, text_img([(f"{pct}%", _fit_font(f"{pct}%", round(17 * s), BOLD, (PW - 8) * s), FG, 0)]), (cx, cy))
     for sy in (cy - 31 * s, cy + 31 * s):
         d.line([(cx - 13 * s, sy + 3 * s), (cx + 13 * s, sy - 3 * s)], fill=EDGE, width=max(1, round(1.5 * s)))
+    _clock_pill(img, state, s, (W - (PW / 2 + 2) * s, cy + (PH / 2 + 13) * s), max_w=(PW - 14) * s)
 
     if info:
         _v_strip(img, info, W - (PW + 8 + V_BAND) * s, cy, s, rounded=True)
@@ -1088,18 +1120,37 @@ def animation(kind, k):
 # Adversaires deja croises (affiches pendant le match)
 # --------------------------------------------------------------------------
 
-def render_met_chips(players, k, title, letters, align="center"):
+def _record_badges(w, l, s, h):
+    """Bilan "3 W  1 L" : un badge teinte par resultat, chiffre clair et lettre de couleur
+    (W / L dans toutes les langues, comme sur l'overlay). Un 0 est grise."""
+    num_f, let_f = font(round(15 * s)), font(round(11 * s))
+    badges = []
+    for value, letter, color in ((w, "W", GREEN), (l, "L", RED)):
+        t = text_img([(str(value), num_f, FG if value else MUTED, 0), (letter, let_f, color, round(3 * s))])
+        bw = max(t.width + 14 * s, h * 1.6)
+        img = Image.new("RGBA", (math.ceil(bw), math.ceil(h)), (0, 0, 0, 0))
+        ImageDraw.Draw(img).rounded_rectangle([0, 0, img.width - 1, img.height - 1], radius=h / 2,
+                                              fill=_scaled(color, 0.32 if value else 0.16, 255))
+        paste_center(img, t, (img.width / 2, img.height / 2))
+        badges.append(img)
+    gap = 4 * s
+    out = Image.new("RGBA", (sum(b.width for b in badges) + round(gap), badges[0].height), (0, 0, 0, 0))
+    out.alpha_composite(badges[0], (0, 0))
+    out.alpha_composite(badges[1], (badges[0].width + round(gap), 0))
+    return out
+
+
+def render_met_chips(players, k, title, align="center"):
     """players = [(pseudo, V, D)] -> titre et une pastille par joueur, empiles.
-    letters = ("V", "D") dans la langue active ; align = "center" ou "right"."""
+    align = "center" ou "right"."""
     s = k * SS
-    pad, ch, gap = 14 * s, 26 * s, 5 * s  # marge (ombre), hauteur d'une pastille, ecart
+    pad, ch, gap = 14 * s, 28 * s, 5 * s  # marge (ombre), hauteur d'une pastille, ecart
     head = text_img([(title, font(round(11 * s), SEMI), AMBER, 0)], shear=0)
-    name_f, rec_f = font(round(14 * s)), font(round(13 * s), SEMI)
-    sep = 10 * s  # entre le pseudo et le bilan
-    chips = [(text_img([(name, name_f, FG, 0)], shear=0),
-              text_img([(f"{w}{letters[0]}", rec_f, GREEN, 0), (f"{l}{letters[1]}", rec_f, RED, 0)], shear=0))
+    name_f = font(round(14 * s))
+    sep = 12 * s  # entre le pseudo et le bilan
+    chips = [(text_img([(name, name_f, FG, 0)], shear=0), _record_badges(w, l, s, ch - 8 * s))
              for name, w, l in players]
-    widths = [n.width + sep + r.width + 24 * s for n, r in chips]
+    widths = [n.width + sep + r.width + 16 * s for n, r in chips]
     inner_w = max([head.width] + widths)
     inner_h = head.height + 6 * s + len(chips) * (ch + gap) - gap
     w_px, h_px = math.ceil((inner_w + 2 * pad) / SS), math.ceil((inner_h + 2 * pad) / SS)
@@ -1124,7 +1175,7 @@ def render_met_chips(players, k, title, letters, align="center"):
         d.rounded_rectangle(box, radius=ch / 2, fill=PANEL[:3] + (240,), outline=AMBER, width=max(1, round(1.2 * s)))
         cy = (box[1] + box[3]) / 2
         paste_center(img, name, (box[0] + 12 * s + name.width / 2, cy))
-        paste_center(img, rec, (box[2] - 12 * s - rec.width / 2, cy))
+        paste_center(img, rec, (box[2] - 4 * s - rec.width / 2, cy))
     return finish(img, w_px, h_px)
 
 

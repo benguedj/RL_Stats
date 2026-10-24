@@ -20,13 +20,20 @@ nothing is injected into the game and nothing touches the anti-cheat. Everything
 
 👉 **[Download the latest version](https://github.com/benguedj/RL_Stats/releases/latest)** (`RL Stats.zip`, Windows 10/11)
 
+Or with [winget](https://learn.microsoft.com/windows/package-manager/winget/), then launch it by typing
+`rlstats` in a terminal or in the Run box (`Win+R`):
+
+```
+winget install benguedj.RLStats
+```
+
 1. Unzip and double-click **`RL Stats.exe`** (no install needed).
    Windows SmartScreen may say *"Windows protected your PC"*: click **More info → Run anyway**
    (the exe is not code-signed).
 2. Start Rocket League, or **restart** it if it was already running (the game only reads its
    config at startup). The overlay enables the Stats API by itself.
 3. In the game video settings, use **Borderless** display mode (an overlay can't be drawn over
-   exclusive fullscreen).
+   exclusive fullscreen). RL Stats checks the game's settings and tells you if it's in fullscreen.
 
 Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 
@@ -38,11 +45,14 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 | **Per-mode stats** | 1v1, 2v2, 3v3 and 4v4 are counted separately; the overlay shows the current mode (or all modes). |
 | **Post-match summary** | Score, goals, assists, saves, shots, demos, accuracy, fastest goal, MVP badge. |
 | **History & progress** | Every game is saved: daily win-rate chart, best streak, MVPs, averages, game list, CSV export. |
-| **Opponents met before** | During the game, small chips next to the overlay show the opponents you already played, with your record. Teammates are left out (the game doesn't say who is in your party). |
-| **Session goal & timer** | e.g. *10 wins tonight*, with progress shown on the overlay, and how long you've been playing. |
+| **Teammates** | Your win rate with each teammate compared to your average, your best duo and most frequent teammate. |
+| **Best time to play** | Win rate by hour and by day of the week, with your best and worst 2-hour slots. |
+| **Opponents met before** | During the game, small chips next to the overlay show the opponents you already played, with your record (e.g. `3 W` `2 L`). Teammates are left out (the game doesn't say who is in your party). |
+| **Session goal & timer** | e.g. *10 wins tonight*, with progress shown on the overlay, and how long you've been playing (on every style). |
 | **Animations & sounds** | Confetti on wins, shake on losses, an animation under the in-game score on every goal scored or conceded, optional sounds (off by default; built-in or your own MP3 / WAV). |
-| **Customization** | 4 styles (scoreboard / minimal × curved / straight), size, colors, opacity. |
-| **Multi-monitor & ultrawide** | Follows the game window on any screen, any resolution, windowed or borderless. |
+| **Customization** | 6 styles (scoreboard / minimal × curved / straight / vertical), size, colors, opacity. |
+| **Multi-monitor & ultrawide** | Follows the game window on any screen, any resolution, windowed or borderless. The position you choose follows resolution changes, and the overlay never ends up off-screen. |
+| **Fullscreen check** | Reads the game's display settings and warns you if Rocket League is in exclusive fullscreen, where no overlay can be shown. |
 | **Streamer mode** | A local page to add as an **OBS browser source**. Off by default. |
 | **Tray icon & taskbar button** | Click to hide / show the overlay, right-click for the menu. |
 | **Session card** | One click copies an image of your session to the clipboard, ready to paste in Discord. |
@@ -65,7 +75,7 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 
 - **Menu**: hover the overlay and click the `☰` button, or right-click it (or the tray icon), or press `Ctrl+Shift+O` in game: history, settings, appearance, players in the game, score correction, quit. Arrow keys, `Enter` and `Esc` work too.
 - **Hover** the overlay: `+W` `-W` `+L` `-L` `☰` `X` buttons.
-- **Drag** it to move it (the position is remembered per style).
+- **Drag** it to move it (the position is remembered per style, and follows resolution changes).
 - **Not lined up with your boost meter?** Set *Appearance → RL interface scale* to the same value as the game's *Interface Scale* setting, or pick the *Vertical (right edge)* shape, which doesn't depend on it.
 - **Shortcuts**: `Ctrl+Shift+H` hide / show, `Ctrl+Shift+R` reset session, `Ctrl+Shift+O` open the menu (in game, the mouse cursor is hidden).
 - **Players in this game (Tracker)**: click a name to open their Tracker Network profile (rank, MMR).
@@ -131,7 +141,7 @@ build.bat
 | `obs_server.py` | Local page for OBS (streamer mode) |
 | `i18n.py` | English / French texts |
 | `rl_stats.spec`, `build.bat` | PyInstaller build |
-| `packaging/` | Readme files shipped in the zip |
+| `packaging/` | Readme files shipped in the zip, winget manifests |
 | `tools/demo.py` | Scripted demo (fake games, captions) used to record the YouTube video |
 
 ## Code signing policy
@@ -183,17 +193,21 @@ Rocket League is a trademark of Psyonix LLC.*
 
 [![Vidéo de démo de RL Stats](docs/video_fr.jpg)](https://youtu.be/Wo7JtuIgp4Q)
 
-👉 **[Télécharger la dernière version](https://github.com/benguedj/RL_Stats/releases/latest)**, puis :
+👉 **[Télécharger la dernière version](https://github.com/benguedj/RL_Stats/releases/latest)**
+(ou `winget install benguedj.RLStats`), puis :
 
 1. Dézippe et lance **`RL Stats.exe`**. Si Windows affiche *« Windows a protégé votre ordinateur »* :
    **Informations complémentaires → Exécuter quand même** (l'exe n'est pas signé).
 2. Lance Rocket League (ou **relance-le** s'il était ouvert). L'overlay active la Stats API tout seul.
-3. Dans les options vidéo du jeu, choisis **Fenêtré sans bordure**.
+3. Dans les options vidéo du jeu, choisis **Fenêtré sans bordure**. RL Stats vérifie le réglage du
+   jeu et te prévient s'il est en plein écran.
 
 **Fonctionnalités** : compteur par mode (1v1, 2v2, 3v3, 4v4), résumé après chaque match, historique
-et graphique de progression, adversaires déjà croisés (affichés pendant le match), objectif et chrono de session,
+et graphique de progression, taux de victoire avec chaque coéquipier, meilleures heures et meilleurs jours pour jouer,
+adversaires déjà croisés (affichés pendant le match), objectif et chrono de session (sur tous les styles),
 animation sous le score à chaque but, animations et sons (intégrés ou tes propres MP3 / WAV),
-personnalisation (designs, couleurs, opacité), multi-écrans et ultra-larges, mode streamer (OBS),
+personnalisation (6 styles, couleurs, opacité), multi-écrans et ultra-larges, avertissement si le jeu
+est en plein écran, mode streamer (OBS),
 icône près de l'horloge, carte de session à coller sur Discord, statut Discord, stats avancées
 (engagements, boost, carte des buts, par période ou par match), alerte tilt, masquage auto quand le jeu est fermé, reprise de session,
 démarrage avec Windows, notification des mises à jour, français / anglais.

@@ -42,7 +42,7 @@ TEXTS = {
                     "{min} MIN PLAYED  ·  GITHUB.COM/BENGUEDJ/RL_STATS"),
 
     # Statut Discord
-    "dc_details": ("{mode}{w}V – {l}D ({p} %)", "{mode}{w}W – {l}L ({p}%)"),
+    "dc_details": ("{mode}{w}W – {l}L ({p} %)", "{mode}{w}W – {l}L ({p}%)"),
     "dc_streak": ("Série de {n} victoires", "{n} win streak"),
     "dc_games": ("{n} matchs cette session", "{n} games this session"),
     "dc_waiting": ("Session en cours", "Session in progress"),
@@ -66,7 +66,7 @@ TEXTS = {
     "m_no_game": ("Aucune partie en ligne pour l'instant", "No online game yet"),
     "m_you": ("(toi)", "(you)"),
     "m_bot": ("(bot / indisponible)", "(bot / unavailable)"),
-    "m_met": ("déjà croisé {n}× : {w}V {l}D", "met {n}×: {w}W {l}L"),
+    "m_met": ("déjà croisé {n}× : {w} W · {l} L", "met {n}×: {w} W · {l} L"),
     "m_blue": ("BLEU", "BLUE"),
     "m_orange": ("ORANGE", "ORANGE"),
     "m_history": ("Historique et progression…", "History and progress…"),
@@ -91,8 +91,6 @@ TEXTS = {
     "m_hide": ("Masquer l'overlay", "Hide overlay"),
     "m_hide_key": ("Ctrl+Maj+H", "Ctrl+Shift+H"),
     "m_score": ("Corriger le score", "Fix the score"),
-    "m_w": ("V", "W"),
-    "m_l": ("D", "L"),
     "m_appearance": ("Apparence", "Appearance"),
     "m_copy_obs": ("Copier l'adresse OBS", "Copy OBS address"),
     "m_quit": ("Quitter", "Quit"),
@@ -106,8 +104,31 @@ TEXTS = {
                     "Your in-game name (leave empty = automatic detection):"),
     "name_detected": ("Détecté automatiquement : {name}", "Detected automatically: {name}"),
 
+    # Accueil (premier lancement)
+    "welcome_title": ("Bienvenue dans RL Stats", "Welcome to RL Stats"),
+    "welcome_heading": ("Un réglage avant de jouer", "One setting before you play"),
+    "welcome_body": ("Dans Rocket League, va dans Paramètres > Vidéo et choisis le mode d'affichage "
+                     "« Fenêtré sans bordure ».\n\n"
+                     "En plein écran, Windows affiche le jeu par-dessus tout le reste : l'overlay "
+                     "resterait en arrière-plan, invisible.",
+                     "In Rocket League, go to Settings > Video and set the display mode to "
+                     "\"Borderless\".\n\n"
+                     "In fullscreen, Windows draws the game above everything else: the overlay "
+                     "would stay in the background, invisible."),
+    "welcome_ok": ("Compris", "Got it"),
+    "welcome_ready_heading": ("Tout est prêt", "You're all set"),
+    "welcome_ready_body": ("Rocket League est déjà dans un mode d'affichage compatible : l'overlay "
+                           "s'affichera par-dessus le jeu.\n\n"
+                           "Les paramètres vont s'ouvrir pour que tu choisisses ton style, tes couleurs "
+                           "et tes alertes.",
+                           "Rocket League already uses a compatible display mode: the overlay will show "
+                           "over the game.\n\n"
+                           "Settings will open next so you can pick your style, colors and alerts."),
+    "fs_title": ("RL Stats - Plein écran", "RL Stats - Fullscreen"),
+    "fs_heading": ("Rocket League est en plein écran", "Rocket League is in fullscreen"),
+
     # Parametres
-    "s_title": ("RL Stats - Paramètres", "RL Stats - Settings"),
+    "s_title":("RL Stats - Paramètres", "RL Stats - Settings"),
     "s_general": ("Général", "General"),
     "s_language": ("Langue", "Language"),
     "s_lang_auto": ("Automatique (Windows)", "Automatic (Windows)"),
@@ -153,7 +174,7 @@ TEXTS = {
     "s_taskbar": ("Bouton dans la barre des tâches", "Taskbar button"),
     "s_shell_hint": ("Clic : afficher / masquer l'overlay. Clic droit sur l'icône : menu.",
                      "Click: show / hide the overlay. Right-click the icon: menu."),
-    "tray_tip": ("RL Stats – {w}V {l}D", "RL Stats – {w}W {l}L"),
+    "tray_tip": ("RL Stats – {w}W {l}L", "RL Stats – {w}W {l}L"),
     "s_hotkeys": ("Raccourcis clavier", "Keyboard shortcuts"),
     "s_hotkeys_desc": ("Ctrl+Maj+H : masquer / afficher    Ctrl+Maj+R : réinitialiser    Ctrl+Maj+O : menu",
                        "Ctrl+Shift+H: hide / show    Ctrl+Shift+R: reset    Ctrl+Shift+O: menu"),
@@ -185,14 +206,14 @@ TEXTS = {
     "h_all_modes": ("Tous les modes", "All modes"),
     "h_games": ("Matchs", "Games"),
     "h_winrate": ("Victoires", "Win rate"),
-    "h_wl": ("{w} V – {l} D", "{w} W – {l} L"),
+    "h_wl": ("{w} W – {l} L", "{w} W – {l} L"),
     "h_best_streak": ("Meilleure série", "Best streak"),
     "h_mvp": ("MVP", "MVP"),
     "h_per_game": ("Par match", "Per game"),
     "h_per_game_val": ("{g} buts · {a} passes · {s} arrêts", "{g} goals · {a} assists · {s} saves"),
     "h_fastest": ("But le plus rapide", "Fastest goal"),
     "h_chart": ("Taux de victoire par jour", "Win rate per day"),
-    "h_chart_tip": ("{day} : {p} % ({w} V – {l} D)", "{day}: {p}% ({w} W – {l} L)"),
+    "h_chart_tip": ("{day} : {p} % ({w} W – {l} L)", "{day}: {p}% ({w} W – {l} L)"),
     "h_no_data": ("Aucun match sur cette période", "No games in this period"),
     "h_search": ("Rechercher", "Search"),
     "h_col_player": ("Joueur", "Player"),
@@ -219,6 +240,35 @@ TEXTS = {
     "h_match_filter": ("Match", "Game"),
     "h_all_matches": ("Tous les matchs de la période", "All games in the period"),
     "h_share": ("Copier la carte de session", "Copy session card"),
+    "h_mates": ("Coéquipiers", "Teammates"),
+    "h_no_mates": ("Aucun coéquipier sur cette période", "No teammates in this period"),
+    "h_best_mate": ("Meilleur duo", "Best duo"),
+    "h_frequent_mate": ("Le plus fréquent", "Most frequent"),
+    "h_your_avg": ("Ta moyenne", "Your average"),
+    "h_mates_count": ("{n} coéquipiers croisés", "{n} teammates met"),
+    "h_pct_games": ("{p} % · {n} matchs", "{p}% · {n} games"),
+    "h_need_games": ("{n} matchs ensemble minimum", "{n} games together minimum"),
+    "h_mates_hint": ("Écart : ton taux de victoire avec ce joueur, comparé à ta moyenne. "
+                     "En gris : moins de {n} matchs ensemble. Double-clic : page Tracker.",
+                     "Difference: your win rate with this player compared to your average. "
+                     "Grey: fewer than {n} games together. Double-click: Tracker page."),
+    "h_col_games": ("Matchs", "Games"),
+    "h_col_record": ("Bilan", "Record"),
+    "h_col_winrate": ("Victoires", "Win rate"),
+    "h_col_diff": ("Écart", "Difference"),
+    "h_hours": ("Horaires", "Time of day"),
+    "h_best_slot": ("Meilleur créneau", "Best time slot"),
+    "h_worst_slot": ("Créneau le moins bon", "Worst time slot"),
+    "h_best_day": ("Meilleur jour", "Best day"),
+    "h_slot": ("{a} h – {b} h", "{a}:00 – {b}:00"),
+    "h_not_enough": ("Pas encore assez de matchs", "Not enough games yet"),
+    "h_hours_hint": ("Selon l'heure de fin des matchs. En gris : moins de {n} matchs.",
+                     "Based on when games ended. Grey: fewer than {n} games."),
+    "h_by_hour": ("Taux de victoire selon l'heure", "Win rate by hour"),
+    "h_by_day": ("Taux de victoire selon le jour", "Win rate by day of the week"),
+    "h_hour": ("{h} h", "{h}:00"),
+    "h_weekdays": ("Lundi,Mardi,Mercredi,Jeudi,Vendredi,Samedi,Dimanche",
+                   "Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday"),
     "h_won": ("Victoire", "Win"),
     "h_lost": ("Défaite", "Loss"),
 }

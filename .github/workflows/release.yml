@@ -100,3 +100,23 @@ jobs:
           }
           gh release upload $tag "dist/RL Stats.zip" dist/SHA256SUMS.txt --clobber
           gh release edit $tag --draft=false --latest
+
+  # Propose la nouvelle version a winget (PR automatique sur microsoft/winget-pkgs).
+  # S'active tout seul une fois le secret WINGET_TOKEN configure : jeton GitHub
+  # "classic" avec le droit public_repo, et un fork de microsoft/winget-pkgs sur
+  # ton compte. La toute premiere version doit avoir ete ajoutee a la main
+  # (manifestes dans packaging/winget, voir packaging/winget/README.md).
+  winget:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: windows-latest
+    env:
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - name: Submit to winget
+        if: env.WINGET_TOKEN != ''
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: benguedj.RLStats
+          installers-regex: '\.zip$'
+          token: ${{ secrets.WINGET_TOKEN }}

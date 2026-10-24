@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: benguedj.RLStats
+PackageVersion: 1.5.0
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+- RelativeFilePath: RL Stats.exe
+  PortableCommandAlias: rlstats
+ReleaseDate: 2026-10-21
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/benguedj/RL_Stats/releases/download/v1.5.0/RL.Stats.zip
+  InstallerSha256: 694A028FBB4D6A69F6E5F5FB9E9420222086605DD72B57188B5A38C7B13145C8
+ManifestType: installer
+ManifestVersion: 1.6.0

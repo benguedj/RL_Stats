@@ -118,6 +118,47 @@ class History:
             d += datetime.timedelta(days=1)
         return out[-90:]  # au-dela, les barres deviennent illisibles
 
+    @staticmethod
+    def teammates(matches):
+        """Coequipiers : [{"id", "name", "w", "l", "last"}], les plus frequents d'abord."""
+        mates = {}
+        for m in matches:
+            for pid, name in m.get("with", []):
+                p = mates.setdefault(pid, {"id": pid, "name": name, "w": 0, "l": 0, "last": 0})
+                p["name"] = name  # garde le pseudo le plus recent
+                p["w" if m["won"] else "l"] += 1
+                p["last"] = max(p["last"], m["t"])
+        return sorted(mates.values(), key=lambda p: (-(p["w"] + p["l"]), -p["last"]))
+
+    @staticmethod
+    def by_hour(matches):
+        """[[V, D]] pour chaque heure de la journee (0 a 23), heure de fin du match."""
+        hours = [[0, 0] for _ in range(24)]
+        for m in matches:
+            hours[datetime.datetime.fromtimestamp(m["t"]).hour][0 if m["won"] else 1] += 1
+        return hours
+
+    @staticmethod
+    def by_weekday(matches):
+        """[[V, D]] pour chaque jour de la semaine (0 = lundi)."""
+        days = [[0, 0] for _ in range(7)]
+        for m in matches:
+            days[day_of(m["t"]).weekday()][0 if m["won"] else 1] += 1
+        return days
+
+    @staticmethod
+    def slots(matches, width=2, min_games=6):
+        """Creneaux de `width` heures [(heure de debut, V, D)] qui ont au moins min_games matchs,
+        du meilleur au moins bon taux de victoire (a egalite, le plus joue d'abord)."""
+        hours = History.by_hour(matches)
+        out = []
+        for h in range(24):
+            w = sum(hours[(h + i) % 24][0] for i in range(width))
+            l = sum(hours[(h + i) % 24][1] for i in range(width))
+            if w + l >= min_games:
+                out.append((h, w, l))
+        return sorted(out, key=lambda s: (-s[1] / (s[1] + s[2]), -(s[1] + s[2])))
+
     def met(self, pid):
         return self.players.get(pid)
 

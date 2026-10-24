@@ -35,7 +35,7 @@ sys.path.insert(0, ROOT)
 DEMO_DIR = os.path.join(tempfile.gettempdir(), "rl_stats_demo")
 # Config de l'app installee (.exe) et de l'app lancee depuis les sources : la plus recente sert
 REAL_CONFIGS = [os.path.join(os.environ.get("APPDATA", ""), "RL Stats", "stats.json"), os.path.join(ROOT, "stats.json")]
-PLACEMENT = ("offsets", "size", "hud_scale", "monitor")  # repris de ta config : l'overlay est place comme d'habitude
+PLACEMENT = ("offsets", "offsets_1440", "size", "hud_scale", "monitor")  # repris de ta config : l'overlay est place comme d'habitude
 
 CAPTIONS = {
     "intro": ("RL Stats : l'overlay gratuit pour Rocket League", "RL Stats: a free overlay for Rocket League"),

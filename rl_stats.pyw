@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+import traceback
 import urllib.parse
 import urllib.request
 import wave
@@ -42,7 +43,7 @@ from discord_rpc import DiscordPresence  # noqa: E402
 from history import History  # noqa: E402
 from i18n import T  # noqa: E402
 from obs_server import OBS_URL, ObsServer  # noqa: E402
-from ui_windows import HistoryWindow, SettingsWindow, hex_to_rgb  # noqa: E402
+from ui_windows import WARN, HistoryWindow, SettingsWindow, hex_to_rgb, show_notice, show_welcome  # noqa: E402
 
 if getattr(sys, "frozen", False):
     # Version .exe : APP_DIR est un dossier temporaire, les donnees vont dans %APPDATA%
@@ -60,7 +61,7 @@ DATA_FILE = os.path.join(DATA_DIR, "stats.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "matches.json")
 LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
 # "Application ID" Discord (https://discord.com/developers/applications) : vide = statut Discord indisponible
@@ -339,6 +340,39 @@ def ensure_stats_api_enabled():
         except (OSError, ValueError) as e:
             log(f"Impossible de modifier {path}: {e}")
     return changed
+
+
+def game_display_mode():
+    """Mode d'affichage enregistre par le jeu : "fullscreen" (exclusif : l'overlay ne peut pas passer
+    devant), "borderless", "windowed", ou None si le jeu n'a jamais ete lance."""
+    path = os.path.join(documents_dir(), "My Games", "Rocket League", "TAGame", "Config", "TASystemSettings.ini")
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return None
+    section = re.search(r"^\[SystemSettings\]\s*$(.*?)(?=^\[|\Z)", text, re.M | re.S)
+    if not section:
+        return None
+
+    def flag(key):
+        m = re.search(rf"^\s*{key}\s*=\s*(\w+)", section.group(1), re.M | re.I)
+        return bool(m) and m.group(1).lower() == "true"
+
+    if flag("Fullscreen") and not flag("Borderless"):
+        return "fullscreen"
+    return "borderless" if flag("Borderless") else "windowed"
+
+
+def exclusive_fullscreen_running():
+    """Vrai si Windows signale une application Direct3D en plein ecran exclusif au premier plan."""
+    state = ctypes.c_int()
+    try:
+        if ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state)) != 0:
+            return False
+    except (AttributeError, OSError):
+        return False
+    return state.value == 3  # QUNS_RUNNING_D3D_FULL_SCREEN
 
 
 # --------------------------------------------------------------------------
@@ -730,11 +764,13 @@ class Store:
         "obs": False, "hotkeys": True, "tray": True, "taskbar": True,
         "auto_hide": True, "resume_session": True, "check_updates": True, "tilt_alert": False, "discord": False,
         "session_saved": {},
+        "offsets_1440": False,  # decalages en pixels 1440p (avant : pixels de l'ecran du moment)
     }
 
     def __init__(self):
         self.data = json.loads(json.dumps(self.DEFAULTS))
-        if os.path.exists(DATA_FILE):
+        self.first_run = not os.path.exists(DATA_FILE)
+        if not self.first_run:
             try:
                 with open(DATA_FILE, encoding="utf-8") as f:
                     saved = json.load(f)
@@ -754,6 +790,8 @@ class Store:
                     self.data["design"], self.data["shape"] = "tableau", "vertical"
             except (OSError, ValueError):
                 log("stats.json illisible, valeurs par defaut")
+        else:
+            self.data["offsets_1440"] = True
         self.save()
 
     def __getitem__(self, key):
@@ -1416,6 +1454,8 @@ class Overlay:
         self._anim_job = None
         self._banner_job = None
         self._geom = None
+        self._box = None  # partie visible du rendu (hors survol), relative a l'ancre
+        self._box_key = None
         self.hidden = False
         self.hover = False
         self.buttons = {}
@@ -1425,6 +1465,8 @@ class Overlay:
         self.event_kind = None
         self.settings_window = None
         self.history_window = None
+        self.fullscreen_window = None  # avertissement "plein ecran" ouvert
+        self.fullscreen_warned = False  # deja averti pour ce passage en plein ecran
         self.hotkeys = None
         self.auto_hidden = False  # masque car le jeu est ferme ou reduit
         self.grace_until = time.monotonic() + 8  # visible quelques secondes au lancement
@@ -1452,6 +1494,8 @@ class Overlay:
         enable_dpi_awareness()
         self.root = tk.Tk()
         self.root.title("RL Stats")
+        # Sans console (pythonw, exe), une erreur dans un rappel Tk serait perdue
+        self.root.report_callback_exception = lambda *exc: log("".join(traceback.format_exception(*exc)))
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
         self.root.geometry("1x1+0+0")
@@ -1466,6 +1510,8 @@ class Overlay:
         self.met_card = FloatingImage(self.root, self.dismiss_met)
         self.goal_layer = GoalLayer(self.root)
         self.viewport = self.compute_viewport()
+        if not self.store["offsets_1440"]:
+            self.migrate_offsets()
 
         self.root.bind("<ButtonPress-1>", self.on_press)
         self.root.bind("<B1-Motion>", self.drag_move)
@@ -1493,6 +1539,11 @@ class Overlay:
             threading.Thread(target=remove_old_exe, daemon=True).start()
         if UPDATED_FLAG in sys.argv:
             self.queue_banner(T("updated", v=APP_VERSION), designs.GREEN, None, 6)
+        if self.store.first_run:
+            # L'accueil dit deja si le mode d'affichage convient, puis ouvre les parametres
+            self.fullscreen_warned = True
+            self.root.after(500, lambda: show_welcome(self.root, self.viewport, game_display_mode(),
+                                                      self.open_settings))
         self.check_config()
         self.root.after(100, self.poll)
         self.root.after(300, self.check_focus)
@@ -1664,9 +1715,24 @@ class Overlay:
         """(cle de position, fonction de rendu, ancre au centre de la jauge ?) du reglage actif."""
         return designs.RENDERERS[(self.store["design"], self.store["shape"])]
 
+    def offset_unit(self, anchor):
+        """Les decalages sont enregistres en pixels 1440p (interface a 100 %) : la position
+        reste la meme quelle que soit la resolution du jeu."""
+        return self.scale() if anchor == "edge" else self.hud_scale()
+
     def offset(self):
         # Chaque combinaison design/forme garde sa propre position
-        return self.store["offsets"].get(self.renderer()[0], [0, 0])
+        dx, dy = self.store["offsets"].get(self.renderer()[0], [0, 0])
+        unit = self.offset_unit(self.renderer()[2])
+        return dx * unit, dy * unit
+
+    def migrate_offsets(self):
+        # Anciennes versions : decalages en pixels de l'ecran, convertis avec la resolution actuelle
+        anchors = {key: anchor for key, _, anchor in designs.RENDERERS.values()}
+        for key, (dx, dy) in self.store["offsets"].items():
+            unit = self.offset_unit(anchors.get(key, "gauge"))
+            self.store["offsets"][key] = [round(dx / unit, 1), round(dy / unit, 1)]
+        self.store["offsets_1440"] = True
 
     def screen_anchor(self):
         """Point de l'ecran ou se place l'ancre du design actif."""
@@ -1674,12 +1740,21 @@ class Overlay:
         anchor = self.renderer()[2]
         dx, dy = self.offset()
         if anchor == "edge":  # colle au bord droit : seul le decalage vertical compte
-            return vx + vw, vy + vh / 2 + dy
+            return self.keep_visible(vx + vw, vy + vh / 2 + dy)
         r = self.hud_scale()
         gx, gy = vx + vw - BOOST_FROM_RIGHT * r, vy + vh - BOOST_FROM_BOTTOM * r
         if anchor == "above":
             gy -= (designs.GAUGE_R + 14) * r  # juste au-dessus de la jauge
-        return gx + dx, gy + dy
+        return self.keep_visible(gx + dx, gy + dy)
+
+    def keep_visible(self, sx, sy):
+        """Ramene l'overlay dans l'image du jeu s'il en sortirait (deplace sur un autre ecran,
+        resolution changee...). La partie visible compte, pas les marges transparentes."""
+        if not self._box:
+            return sx, sy
+        x0, y0, x1, y1 = self._box  # partie visible, relative a l'ancre
+        vx, vy, vw, vh = self.viewport
+        return min(max(sx, vx - x0), vx + vw - x1), min(max(sy, vy - y0), vy + vh - y1)
 
     # --- Compteurs ----------------------------------------------------------
 
@@ -1722,11 +1797,15 @@ class Overlay:
         le dernier rendu de l'overlay (pas pendant un glisser : la fenetre suit la souris)."""
         sub = self.sub_label()
         if self.session_clock() and sub != self._state["sub"] and not self._dragging:
-            self._state["sub"] = sub
-            _, ax, ay, buttons = self._base
-            self._base = (designs.paste_sub(self._bare, self._slot, sub), ax, ay, buttons)
-            self.present()
-            self.publish(self._state)
+            if not self._slot or len(sub) != len(self._state["sub"]):
+                # Chrono qui apparait ou change de format (59:59 -> 1:00:00) : sa place change
+                self.draw()
+            else:
+                self._state["sub"] = sub
+                _, ax, ay, buttons = self._base
+                self._base = (designs.paste_sub(self._bare, self._slot, sub), ax, ay, buttons)
+                self.present()
+                self.publish(self._state)
         self.root.after(1000 - int(time.time() * 1000) % 1000 + 5, self.tick_clock)  # cale sur la seconde
 
     def sub_label(self):
@@ -1769,6 +1848,11 @@ class Overlay:
         bare, (ax, ay), buttons = render(dict(state, sub_slot=slot), k, hover=self.hover)
         self._state, self._bare, self._slot = state, bare, slot
         self._base = (designs.paste_sub(bare, slot, state["sub"]), ax, ay, buttons)
+        # Mesure sans les boutons du survol : l'overlay ne doit pas sauter quand la souris arrive
+        box_key = (self.renderer()[0], k)
+        if not self.hover or box_key != self._box_key:
+            x0, y0, x1, y1 = self._base[0].getchannel("A").getbbox() or (0, 0, 0, 0)
+            self._box, self._box_key = (x0 - ax, y0 - ay, x1 - ax, y1 - ay), box_key
         self.present()
         self.publish(state)
         self.shell.set_tip(T("tray_tip", w=w, l=l))
@@ -2050,7 +2134,7 @@ class Overlay:
         key = (tuple(self.met_players), self.design_k(), edge, i18n.lang())
         if not self._met_img or self._met_img[0] != key:
             img = designs.render_met_chips(self.met_players, self.design_k(), T("met_title"),
-                                           (T("m_w"), T("m_l")), "right" if edge else "center")
+                                           "right" if edge else "center")
             self._met_img = (key, img)
         img = self._met_img[1]
         self.met_card.show(img, *self.met_position(img))
@@ -2075,7 +2159,7 @@ class Overlay:
     def menu_main(self):
         w, l = self.counts()
         win, loss = self.store["win_color"], self.store["loss_color"]
-        lw, ll = T("m_w"), T("m_l")
+        lw, ll = "W", "L"  # pas traduits : W / L partout, comme sur l'overlay
         entries = [pm.banner("RL STATS", [(str(w), win), ("  –  ", rgb_hex(designs.MUTED)), (str(l), loss)],
                              self.sub_label())]
         if self.update_info:
@@ -2235,7 +2319,28 @@ class Overlay:
         if not self.connected and ensure_stats_api_enabled() and rocket_league_running():
             self.notice = "restart_rl"
             self.refresh()
+        self.check_display_mode()
         self.root.after(15000, self.check_config)
+
+    def check_display_mode(self):
+        """Previent si le jeu est en plein ecran exclusif (l'overlay resterait derriere). Pas pendant
+        qu'on joue : une fenetre qui s'ouvre ferait sortir du jeu ; ce sera fait a la prochaine
+        verification ou le jeu n'est plus au premier plan."""
+        u = ctypes.windll.user32
+        u.GetForegroundWindow.restype = ctypes.c_void_p
+        playing = bool(self.screens.game_hwnd) and u.GetForegroundWindow() == self.screens.game_hwnd
+        fullscreen = game_display_mode() == "fullscreen" or (playing and exclusive_fullscreen_running())
+        if not fullscreen:
+            self.fullscreen_warned = False
+        elif not self.fullscreen_warned and not playing and not self.fullscreen_window:
+            self.fullscreen_warned = True
+            log("Jeu en plein ecran exclusif : avertissement")
+
+            def closed():
+                self.fullscreen_window = None
+
+            self.fullscreen_window = show_notice(self.root, self.viewport, T("fs_title"), T("fs_heading"),
+                                                 T("welcome_body"), closed, color=WARN)
 
     def keep_on_top(self):
         if not self.session_start and self.screens.game_hwnd:  # Rocket League vient d'etre lance
@@ -2416,7 +2521,8 @@ class Overlay:
             self._dragging = False
             dx, dy = self.drag_delta(e)
             ox, oy = self.offset()
-            self.store["offsets"][self.renderer()[0]] = [ox + dx, oy + dy]
+            unit = self.offset_unit(self.renderer()[2])
+            self.store["offsets"][self.renderer()[0]] = [round((ox + dx) / unit, 1), round((oy + dy) / unit, 1)]
             self.store.save()
             self.draw()
 

@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: benguedj.RLStats
+PackageVersion: 1.5.0
+PackageLocale: en-US
+Publisher: benguedj
+PublisherUrl: https://github.com/benguedj
+PublisherSupportUrl: https://github.com/benguedj/RL_Stats/issues
+PackageName: RL Stats
+PackageUrl: https://github.com/benguedj/RL_Stats
+License: MIT
+LicenseUrl: https://github.com/benguedj/RL_Stats/blob/main/LICENSE
+ShortDescription: Automatic win / loss counter overlay for Rocket League.
+Description: |-
+  RL Stats shows your session wins, losses and win rate right above the boost meter in Rocket League,
+  and updates by itself at the end of every online match. It uses the game's official Stats API:
+  nothing is injected into the game. Also includes match summaries, history and progress, players
+  met before, an OBS streamer mode and Discord status.
+Tags:
+- gaming
+- overlay
+- rocket-league
+- stats
+- tracker
+ReleaseNotesUrl: https://github.com/benguedj/RL_Stats/releases/tag/v1.5.0
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

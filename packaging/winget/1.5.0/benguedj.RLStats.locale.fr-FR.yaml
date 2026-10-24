@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.6.0.schema.json
+PackageIdentifier: benguedj.RLStats
+PackageVersion: 1.5.0
+PackageLocale: fr-FR
+Publisher: benguedj
+PackageName: RL Stats
+License: MIT
+ShortDescription: Compteur automatique de victoires / défaites pour Rocket League, en overlay.
+Description: |-
+  RL Stats affiche les victoires, les défaites et le taux de victoire de ta session juste au-dessus
+  de la jauge de boost dans Rocket League, et se met à jour tout seul à la fin de chaque match en
+  ligne. Il utilise la Stats API officielle du jeu : rien n'est injecté dans le jeu. Résumés de
+  match, historique et progression, joueurs déjà croisés, mode streamer OBS et statut Discord.
+Tags:
+- jeu
+- overlay
+- rocket-league
+- statistiques
+ManifestType: locale
+ManifestVersion: 1.6.0
