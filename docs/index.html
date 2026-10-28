@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RL Stats: W / L tracker for Rocket League</title>
+<meta name="description" content="Free, open-source overlay that tracks your Rocket League wins and losses right next to your boost meter. Uses the official Stats API: no injection, nothing leaves your PC.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="RL Stats: W / L tracker for Rocket League">
+<meta property="og:description" content="Free, open-source overlay that tracks your wins and losses next to your boost meter. Official Stats API, no injection.">
+<meta property="og:url" content="https://benguedj.github.io/RL_Stats/">
+<meta property="og:image" content="https://benguedj.github.io/RL_Stats/victory.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="rl_stats.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,600;1,700;1,800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b1220;
+    --bg-2: #111a2c;
+    --panel: #141e33;
+    --line: #24314d;
+    --text: #e8edf6;
+    --muted: #93a1bb;
+    --win: #2ee26b;
+    --loss: #ff4d4d;
+    --gold: #f5c518;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 "Barlow", system-ui, sans-serif;
+  }
+  html[lang="fr"] [lang="en"], html[lang="en"] [lang="fr"] { display: none !important; }
+  a { color: var(--win); }
+  img { max-width: 100%; height: auto; display: block; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+  h1, h2, h3, .brand, .btn {
+    font-family: "Barlow Condensed", sans-serif;
+    font-style: italic;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+  }
+  h2 { font-size: clamp(28px, 5vw, 40px); margin: 0 0 8px; line-height: 1.1; }
+  h3 { font-size: 22px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 32px; max-width: 640px; }
+  section { padding: 72px 0; }
+  section + section { border-top: 1px solid var(--line); }
+
+  /* Nav */
+  nav {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(11, 18, 32, .85);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .wrap { display: flex; align-items: center; gap: 16px; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 800; color: var(--text); text-decoration: none; }
+  .brand img { width: 32px; height: 32px; border-radius: 8px; }
+  nav .links { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+  nav .links a { color: var(--muted); text-decoration: none; font-weight: 500; }
+  nav .links a:hover { color: var(--text); }
+  .lang { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .lang button {
+    background: none; border: 0; color: var(--muted); padding: 4px 10px; cursor: pointer;
+    font: 600 13px "Barlow", sans-serif;
+  }
+  .lang button[aria-pressed="true"] { background: var(--line); color: var(--text); }
+  @media (max-width: 640px) { nav .links .hide-sm { display: none; } }
+
+  /* Hero */
+  .hero {
+    padding: 80px 0 56px; text-align: center;
+    background: radial-gradient(ellipse 80% 60% at 50% 0%, #1d3050 0%, transparent 70%);
+  }
+  .hero h1 { font-size: clamp(40px, 8vw, 76px); line-height: 1; margin: 0 0 16px; font-weight: 800; }
+  .hero h1 .w { color: var(--win); }
+  .hero h1 .l { color: var(--loss); }
+  .hero p.sub { color: var(--muted); font-size: clamp(17px, 2.4vw, 20px); max-width: 680px; margin: 0 auto 32px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 14px 28px; border-radius: 8px; font-size: 22px; font-weight: 700;
+    text-decoration: none; transform: skewX(-8deg);
+  }
+  .btn > * { transform: skewX(8deg); }
+  .btn-primary { background: var(--win); color: #06210f; box-shadow: 0 0 32px rgba(46, 226, 107, .35); }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-ghost { border: 1px solid var(--line); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--muted); }
+  .meta { color: var(--muted); font-size: 14px; margin-top: 14px; }
+  .meta code, .install code {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; color: var(--text);
+  }
+  .hero-img { margin: 48px auto 0; border-radius: 12px; border: 1px solid var(--line); }
+  #video { padding-top: 0; }
+
+  /* Video */
+  .video {
+    position: relative; aspect-ratio: 16 / 9; max-width: 880px; margin: 0 auto;
+    border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #000;
+  }
+  .video button { all: unset; cursor: pointer; position: absolute; inset: 0; }
+  .video button img { width: 100%; height: 100%; object-fit: cover; }
+  .video .play {
+    position: absolute; left: 50%; top: 50%; width: 84px; height: 84px; margin: -42px 0 0 -42px;
+    border-radius: 50%; background: rgba(46, 226, 107, .92); display: grid; place-items: center;
+    box-shadow: 0 0 40px rgba(0, 0, 0, .5);
+  }
+  .video .play::after { content: ""; border-left: 26px solid #06210f; border-top: 16px solid transparent; border-bottom: 16px solid transparent; margin-left: 6px; }
+  .video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+  /* Features */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .card .chip { display: inline-block; font: 700 13px "Barlow", sans-serif; padding: 1px 7px; border-radius: 4px; }
+  .chip.w { background: rgba(46, 226, 107, .15); color: var(--win); }
+  .chip.l { background: rgba(255, 77, 77, .15); color: var(--loss); }
+  .more { margin-top: 24px; color: var(--muted); font-size: 15px; }
+
+  /* Screenshots */
+  .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+  .shots figure { margin: 0; }
+  .shots img { border-radius: 10px; border: 1px solid var(--line); }
+  .shots figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+  .shots .wide { grid-column: 1 / -1; }
+
+  /* Safe */
+  .safe { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .safe .card { border-left: 3px solid var(--win); }
+
+  /* Install */
+  .install ol { list-style: none; counter-reset: s; padding: 0; margin: 0; display: grid; gap: 16px; }
+  .install li { counter-increment: s; display: flex; gap: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+  .install li::before {
+    content: counter(s); flex: none; width: 40px; height: 40px; border-radius: 8px;
+    background: var(--line); display: grid; place-items: center;
+    font: italic 800 24px "Barlow Condensed", sans-serif; color: var(--win);
+  }
+  .install li p { margin: 2px 0 0; color: var(--muted); }
+
+  /* FAQ */
+  details { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0 20px; margin-bottom: 10px; }
+  summary { cursor: pointer; padding: 16px 0; font-weight: 600; font-size: 17px; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "+"; display: inline-block; width: 22px; color: var(--win); font-weight: 700; }
+  details[open] summary::before { content: "–"; }
+  details p { margin: 0 0 16px; color: var(--muted); }
+
+  /* Final CTA + footer */
+  .final { text-align: center; }
+  footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#"><img src="rl_stats.png" alt="">RL Stats</a>
+    <div class="links">
+      <a class="hide-sm" href="#features"><span lang="en">Features</span><span lang="fr">Fonctions</span></a>
+      <a class="hide-sm" href="#faq">FAQ</a>
+      <a href="https://github.com/benguedj/RL_Stats">GitHub</a>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="en">EN</button>
+        <button type="button" data-lang="fr">FR</button>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>
+      <span lang="en">Track your <span class="w">W</span> / <span class="l">L</span><br>in Rocket League</span>
+      <span lang="fr">Tes <span class="w">W</span> / <span class="l">L</span><br>sur Rocket League</span>
+    </h1>
+    <p class="sub">
+      <span lang="en">A free overlay that counts your wins and losses automatically, right next to your boost meter. Plus match summaries, history, teammates and progress charts.</span>
+      <span lang="fr">Un overlay gratuit qui compte tes victoires et défaites tout seul, juste à côté de ta jauge de boost. Avec résumé de match, historique, coéquipiers et graphiques de progression.</span>
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/benguedj/RL_Stats/releases/latest/download/RL.Stats.zip">
+        <span><span lang="en">Download for Windows</span><span lang="fr">Télécharger pour Windows</span></span>
+      </a>
+      <a class="btn btn-ghost" href="#video"><span><span lang="en">Watch the demo</span><span lang="fr">Voir la démo</span></span></a>
+    </div>
+    <p class="meta">
+      <span class="version"></span>
+      <span lang="en">Windows 10/11 · free · open source · no install</span>
+      <span lang="fr">Windows 10/11 · gratuit · open source · sans installation</span>
+      <br>
+      <span lang="en">or</span><span lang="fr">ou</span> <code>winget install benguedj.RLStats</code>
+    </p>
+    <img class="hero-img" src="designs.png" width="1510" height="262" alt="The overlay styles: curved, straight, vertical and minimal">
+  </div>
+</header>
+
+<section id="video">
+  <div class="wrap">
+    <div class="video">
+      <button type="button" aria-label="Play the demo video">
+        <img lang="en" src="video_en.jpg" alt="">
+        <img lang="fr" src="video_fr.jpg" alt="">
+        <span class="play"></span>
+      </button>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2><span lang="en">What it does</span><span lang="fr">Ce que ça fait</span></h2>
+    <p class="lead">
+      <span lang="en">Launch it once, play as usual. Everything is recorded on its own.</span>
+      <span lang="fr">Tu le lances une fois et tu joues normalement. Tout s'enregistre tout seul.</span>
+    </p>
+    <div class="grid">
+      <div class="card">
+        <h3><span lang="en">Automatic W / L</span><span lang="fr">W / L automatique</span></h3>
+        <p lang="en">Updated at the end of every online match, separately for 1v1, 2v2, 3v3 and 4v4. Leaving counts as a loss.</p>
+        <p lang="fr">Mis à jour à la fin de chaque match en ligne, séparément pour le 1v1, 2v2, 3v3 et 4v4. Quitter compte comme une défaite.</p>
+      </div>
+      <div class="card">
+        <h3><span lang="en">Match summary</span><span lang="fr">Résumé de match</span></h3>
+        <p lang="en">Score, goals, assists, saves, shots, demos, accuracy, fastest goal and the MVP badge.</p>
+        <p lang="fr">Score, buts, passes, arrêts, tirs, démolitions, précision, but le plus rapide et badge MVP.</p>
+      </div>
+      <div class="card">
+        <h3><span lang="en">History & progress</span><span lang="fr">Historique et progression</span></h3>
+        <p lang="en">Every game saved: daily win rate, best streak, MVPs, averages, CSV export.</p>
+        <p lang="fr">Chaque partie est gardée : taux de victoire par jour, meilleure série, MVP, moyennes, export CSV.</p>
+      </div>
+      <div class="card">
+        <h3><span lang="en">Teammates</span><span lang="fr">Coéquipiers</span></h3>
+        <p lang="en">Your win rate with each teammate compared to your average. Find your best duo.</p>
+        <p lang="fr">Ton taux de victoire avec chaque coéquipier comparé à ta moyenne. Trouve ton meilleur duo.</p>
+      </div>
+      <div class="card">
+        <h3><span lang="en">Best time to play</span><span lang="fr">Meilleures heures</span></h3>
+        <p lang="en">Win rate by hour and by day of the week, with your best and worst 2-hour slots.</p>
+        <p lang="fr">Taux de victoire par heure et par jour de la semaine, avec tes meilleurs et pires créneaux de 2 h.</p>
+      </div>
+      <div class="card">
+        <h3><span lang="en">Opponents met before</span><span lang="fr">Adversaires déjà croisés</span></h3>
+        <p lang="en">During the game, see your record against players you already faced: <span class="chip w">3 W</span> <span class="chip l">2 L</span></p>
+        <p lang="fr">Pendant le match, ton bilan contre les joueurs déjà affrontés : <span class="chip w">3 W</span> <span class="chip l">2 L</span></p>
+      </div>
+      <div class="card">
+        <h3><span lang="en">Session goal & timer</span><span lang="fr">Objectif et chrono</span></h3>
+        <p lang="en">"10 wins tonight", with progress on the overlay. Optional tilt alert after 3 losses in a row.</p>
+        <p lang="fr">« 10 victoires ce soir », avec la progression sur l'overlay. Alerte tilt en option après 3 défaites d'affilée.</p>
+      </div>
+      <div class="card">
+        <h3><span lang="en">Advanced stats</span><span lang="fr">Stats avancées</span></h3>
+        <p lang="en">Kickoffs won, average boost, time at 0 boost, supersonic time, and a map of where your goals go in.</p>
+        <p lang="fr">Engagements gagnés, boost moyen, temps à 0 boost, temps supersonique et carte de tes buts.</p>
+      </div>
+      <div class="card">
+        <h3><span lang="en">For streamers</span><span lang="fr">Pour les streamers</span></h3>
+        <p lang="en">OBS browser source, Discord status, and a session card you can paste in Discord in one click.</p>
+        <p lang="fr">Source navigateur OBS, statut Discord, et une carte de session à coller sur Discord en un clic.</p>
+      </div>
+    </div>
+    <p class="more">
+      <span lang="en">Also: 6 overlay styles, custom colors and size, win confetti, goal animations under the score, optional sounds, multi-monitor and ultrawide, auto-hide when the game is closed, English and French.</span>
+      <span lang="fr">Et aussi : 6 styles d'overlay, couleurs et taille personnalisables, confettis à la victoire, animation sous le score à chaque but, sons en option, multi-écrans et ultra-larges, masquage auto quand le jeu est fermé, français et anglais.</span>
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span lang="en">Screenshots</span><span lang="fr">Captures</span></h2>
+    <p class="lead">
+      <span lang="en">The overlay in game, and the history window.</span>
+      <span lang="fr">L'overlay en jeu, et la fenêtre d'historique.</span>
+    </p>
+    <div class="shots">
+      <figure class="wide">
+        <img src="victory.png" width="1086" height="462" alt="Victory animation and match summary" loading="lazy">
+        <figcaption><span lang="en">Victory animation and post-match summary</span><span lang="fr">Animation de victoire et résumé après le match</span></figcaption>
+      </figure>
+      <figure>
+        <img src="history.png" width="858" height="668" alt="History window with daily win rate" loading="lazy">
+        <figcaption><span lang="en">Progress over 30 days</span><span lang="fr">Progression sur 30 jours</span></figcaption>
+      </figure>
+      <figure>
+        <img src="analysis.png" width="860" height="640" alt="Advanced stats and goal map" loading="lazy">
+        <figcaption><span lang="en">Advanced stats and goal map</span><span lang="fr">Stats avancées et carte des buts</span></figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span lang="en">Safe for your account</span><span lang="fr">Sans risque pour ton compte</span></h2>
+    <p class="lead">
+      <span lang="en">RL Stats reads Rocket League's official Stats API, the local feed Psyonix added for overlays and tournament tools.</span>
+      <span lang="fr">RL Stats lit la Stats API officielle de Rocket League, le flux local ajouté par Psyonix pour les overlays et les outils de tournoi.</span>
+    </p>
+    <div class="safe">
+      <div class="card">
+        <h3><span lang="en">No injection</span><span lang="fr">Aucune injection</span></h3>
+        <p lang="en">It doesn't read game memory, inject code or modify game files. The anti-cheat is never touched.</p>
+        <p lang="fr">Il ne lit pas la mémoire du jeu, n'injecte rien et ne modifie pas les fichiers du jeu. L'anti-cheat n'est jamais touché.</p>
+      </div>
+      <div class="card">
+        <h3><span lang="en">Your data stays local</span><span lang="fr">Tes données restent chez toi</span></h3>
+        <p lang="en">Settings and history live on your PC. The only network request is the update check, which you can turn off.</p>
+        <p lang="fr">Réglages et historique restent sur ton PC. Le seul accès réseau est la vérification des mises à jour, désactivable.</p>
+      </div>
+      <div class="card">
+        <h3>Open source</h3>
+        <p lang="en">The full code is on GitHub under the MIT license. Read it, or build the exe yourself.</p>
+        <p lang="fr">Tout le code est sur GitHub sous licence MIT. Tu peux le lire, ou construire l'exe toi-même.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="install">
+  <div class="wrap">
+    <h2><span lang="en">Get started</span><span lang="fr">Démarrer</span></h2>
+    <p class="lead">
+      <span lang="en">Under a minute, nothing to install.</span>
+      <span lang="fr">Moins d'une minute, rien à installer.</span>
+    </p>
+    <ol>
+      <li>
+        <div>
+          <h3><span lang="en">Download and unzip</span><span lang="fr">Télécharge et dézippe</span></h3>
+          <p lang="en">Double-click <code>RL Stats.exe</code>. If Windows SmartScreen shows "Windows protected your PC", click <b>More info → Run anyway</b>.</p>
+          <p lang="fr">Double-clique sur <code>RL Stats.exe</code>. Si Windows affiche « Windows a protégé votre ordinateur », clique sur <b>Informations complémentaires → Exécuter quand même</b>.</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3><span lang="en">Start Rocket League</span><span lang="fr">Lance Rocket League</span></h3>
+          <p lang="en">Or restart it if it was already open: the game only reads its config at startup. RL Stats enables the Stats API by itself.</p>
+          <p lang="fr">Ou relance-le s'il était déjà ouvert : le jeu ne lit sa config qu'au démarrage. RL Stats active la Stats API tout seul.</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3><span lang="en">Use Borderless mode</span><span lang="fr">Passe en fenêtré sans bordure</span></h3>
+          <p lang="en">No overlay can be drawn over exclusive fullscreen. RL Stats checks the game's settings and tells you if needed.</p>
+          <p lang="fr">Aucun overlay ne peut s'afficher par-dessus le plein écran exclusif. RL Stats vérifie le réglage du jeu et te prévient.</p>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <h2>FAQ</h2>
+    <details>
+      <summary><span lang="en">Can I get banned?</span><span lang="fr">Je peux me faire bannir ?</span></summary>
+      <p lang="en">No. RL Stats only uses the official Stats API that Psyonix provides for overlays. The only change it makes is setting <code>PacketSendRate</code> in your user config file <code>TAStatsAPI.ini</code>.</p>
+      <p lang="fr">Non. RL Stats utilise uniquement la Stats API officielle que Psyonix fournit pour les overlays. La seule modification qu'il fait est de régler <code>PacketSendRate</code> dans ton fichier de config <code>TAStatsAPI.ini</code>.</p>
+    </details>
+    <details>
+      <summary><span lang="en">Why no rank or MMR?</span><span lang="fr">Pourquoi pas de rang ou de MMR ?</span></summary>
+      <p lang="en">The game doesn't send them through the Stats API. The players menu has links to each player's Tracker Network profile.</p>
+      <p lang="fr">Le jeu ne les envoie pas dans la Stats API. Le menu des joueurs contient un lien vers le profil Tracker Network de chacun.</p>
+    </details>
+    <details>
+      <summary><span lang="en">Are private or offline matches counted?</span><span lang="fr">Les matchs privés ou hors ligne comptent ?</span></summary>
+      <p lang="en">No, only online matches are counted.</p>
+      <p lang="fr">Non, seuls les matchs en ligne sont comptés.</p>
+    </details>
+    <details>
+      <summary><span lang="en">It's not lined up with my boost meter.</span><span lang="fr">Il n'est pas aligné sur ma jauge de boost.</span></summary>
+      <p lang="en">Set <b>Appearance → RL interface scale</b> to the same value as the game's Interface Scale, or pick the vertical style. You can also drag the overlay anywhere.</p>
+      <p lang="fr">Règle <b>Apparence → Échelle de l'interface RL</b> sur la même valeur que l'échelle de l'interface du jeu, ou choisis le style vertical. Tu peux aussi déplacer l'overlay où tu veux.</p>
+    </details>
+    <details>
+      <summary><span lang="en">My antivirus flags the exe.</span><span lang="fr">Mon antivirus bloque l'exe.</span></summary>
+      <p lang="en">Executables built with PyInstaller are sometimes flagged by mistake. Official releases are built by GitHub Actions from the public code, and you can build it yourself from source.</p>
+      <p lang="fr">Les exécutables faits avec PyInstaller sont parfois signalés par erreur. Les versions officielles sont construites par GitHub Actions à partir du code public, et tu peux aussi le construire toi-même.</p>
+    </details>
+    <details>
+      <summary><span lang="en">Where is my data?</span><span lang="fr">Où sont mes données ?</span></summary>
+      <p lang="en">In <code>%APPDATA%\RL Stats</code>: settings, match history and log. Nothing is ever sent anywhere.</p>
+      <p lang="fr">Dans <code>%APPDATA%\RL Stats</code> : réglages, historique des matchs et log. Rien n'est jamais envoyé ailleurs.</p>
+    </details>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <h2><span lang="en">Ready for your next session?</span><span lang="fr">Prêt pour ta prochaine session ?</span></h2>
+    <p class="lead" style="margin-left:auto;margin-right:auto">
+      <span lang="en">Free, forever. Feedback and ideas are welcome on GitHub.</span>
+      <span lang="fr">Gratuit, pour toujours. Retours et idées bienvenus sur GitHub.</span>
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/benguedj/RL_Stats/releases/latest/download/RL.Stats.zip">
+        <span><span lang="en">Download for Windows</span><span lang="fr">Télécharger pour Windows</span></span>
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/benguedj/RL_Stats/issues"><span><span lang="en">Report a bug</span><span lang="fr">Signaler un bug</span></span></a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>
+      <span lang="en">Fan-made project, not affiliated with or endorsed by Psyonix or Epic Games. Rocket League is a trademark of Psyonix LLC.</span>
+      <span lang="fr">Projet de fan, sans lien avec Psyonix ou Epic Games. Rocket League est une marque de Psyonix LLC.</span>
+    </span>
+    <span>
+      <a href="https://github.com/benguedj/RL_Stats">GitHub</a> ·
+      <a href="https://github.com/benguedj/RL_Stats/blob/main/LICENSE">MIT</a> ·
+      <a href="https://github.com/benguedj/RL_Stats#code-signing-policy"><span lang="en">Privacy</span><span lang="fr">Confidentialité</span></a>
+    </span>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+
+    function setLang(lang) {
+      root.lang = lang;
+      document.querySelectorAll(".lang button").forEach(function (b) {
+        b.setAttribute("aria-pressed", b.dataset.lang === lang);
+      });
+    }
+
+    var saved = null;
+    try { saved = localStorage.getItem("lang"); } catch (e) {}
+    setLang(saved || ((navigator.language || "").toLowerCase().indexOf("fr") === 0 ? "fr" : "en"));
+
+    document.querySelectorAll(".lang button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        setLang(b.dataset.lang);
+        try { localStorage.setItem("lang", b.dataset.lang); } catch (e) {}
+      });
+    });
+
+    // YouTube is only loaded when the visitor clicks play
+    var video = document.querySelector(".video");
+    video.querySelector("button").addEventListener("click", function () {
+      video.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/Wo7JtuIgp4Q?autoplay=1" ' +
+        'title="RL Stats demo" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>';
+    });
+
+    // Latest version number next to the download button
+    fetch("https://api.github.com/repos/benguedj/RL_Stats/releases/latest")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (r) {
+        if (r && r.tag_name) document.querySelector(".version").textContent = r.tag_name + " · ";
+      })
+      .catch(function () {});
+  })();
+</script>
+</body>
+</html>
