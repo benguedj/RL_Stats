@@ -13,7 +13,8 @@ Avant de lancer :
   - les positions, la taille et l'echelle du HUD sont reprises de ta config (deplace l'overlay a la
     main dans l'app normale, pour chaque style / forme, avant de lancer la demo) ;
   - lancer l'enregistrement de l'ecran, puis :  .venv\\Scripts\\python.exe tools\\demo.py
-Options : --lang fr|en (en par defaut), --name "Pseudo", --sounds (sons actives).
+Options : --lang fr|en (en par defaut), --name "Pseudo", --sounds (sons actives),
+--short (clip d'environ 25 s pour Reddit / le site).
 """
 
 import argparse
@@ -52,6 +53,8 @@ CAPTIONS = {
     "history": ("Chaque match est enregistré : progression jour par jour", "Every game is saved: day-by-day progress"),
     "matches": ("Liste des matchs, export CSV", "Game list, CSV export"),
     "players": ("Les joueurs que tu as croisés", "The players you've met"),
+    "mates": ("Ton taux de victoire avec chaque coéquipier", "Your win rate with each teammate"),
+    "hours": ("Tes meilleures heures pour jouer", "Your best time to play"),
     "analysis": ("Stats avancées : engagements, boost, où tes buts entrent",
                  "Advanced stats: kickoffs, boost, where your goals go in"),
     "settings": ("Paramètres : sons, alertes, mode streamer OBS, Discord…",
@@ -61,6 +64,8 @@ CAPTIONS = {
     "card": ("Carte de session, à coller sur Discord", "Session card, ready to paste in Discord"),
     "outro": ("Gratuit et open source : github.com/benguedj/RL_Stats",
               "Free and open source: github.com/benguedj/RL_Stats"),
+    "outro_short": ("Gratuit et open source : benguedj.github.io/RL_Stats",
+                    "Free and open source: benguedj.github.io/RL_Stats"),
 }
 
 TEAMMATE = ("Kyrios", "Epic|5f1c2a9be0d4|0")
@@ -450,6 +455,35 @@ class Demo:
         self.then(6.0, self.caption.hide)
         self.then(1.5, app.quit)
 
+    def short_script(self):
+        """~25 s pour Reddit / le site : un match rythme (3 buts), victoire, resume et tour de l'historique."""
+        app = self.app
+        app.store.data["summary_time"] = 4
+        self.then(0.3, app.q.put, ("status", True))
+
+        m = Match(self, 2, 0)
+        self.then(0.2, m.start)
+        self.say(0.1, "met")
+        self.then(1.6, m.goal, self.name, 0, 112.4, TEAMMATE[0])
+        self.say(0.1, "goal_for")
+        self.then(1.5, m.goal, OPPONENTS[0][0], 1, 96.0)
+        self.say(0.1, "goal_against")
+        self.then(1.4, m.goal, TEAMMATE[0], 0, 88.3, self.name)
+        self.then(1.2, m.end, self.name)
+        self.say(0.1, "win")
+
+        # Tour rapide de l'historique, une fois le resume affiche
+        self.say(5.0, "history")
+        self.then(0.1, self.open_history)
+        self.then(0.1, self.history, "set_period", "30d")
+        for delay, tab, key in ((2.2, "mates", "mates"), (2.2, "hours", "hours"), (2.2, "analysis", "analysis")):
+            self.then(delay, self.history, "set_tab", tab)
+            self.say(0.0, key)
+        self.then(2.4, self.close_history)
+
+        self.say(0.2, "outro_short")
+        self.then(2.5, app.quit)
+
     def rl_presets(self):
         from ui_windows import COLOR_PRESETS
         return list(COLOR_PRESETS)
@@ -461,6 +495,7 @@ def main():
     parser.add_argument("--name", default="Ben")
     parser.add_argument("--sounds", action="store_true")
     parser.add_argument("--speed", type=float, default=1.0, help="essai accelere (ex. 4)")
+    parser.add_argument("--short", action="store_true", help="clip d'environ 25 s (Reddit, site)")
     args = parser.parse_args()
 
     shutil.rmtree(DEMO_DIR, ignore_errors=True)
@@ -500,7 +535,8 @@ def main():
     with contextlib.suppress(AttributeError, OSError):
         rl.ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("RLStats.Demo")
     app = rl.Overlay(rl.socket.socket())
-    Demo(rl, app, args.lang, args.name, args.speed).script()
+    demo = Demo(rl, app, args.lang, args.name, args.speed)
+    demo.short_script() if args.short else demo.script()
     app.run()
 
 
