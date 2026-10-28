@@ -151,6 +151,9 @@ build.bat
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
 [SignPath Foundation](https://signpath.org).
 
+> **Status:** signing is being set up with SignPath Foundation. Current releases are not signed yet;
+> the policy below applies as soon as it is active.
+
 Official releases are built from this repository by
 [GitHub Actions](.github/workflows/release.yml), never on a personal machine. Only that build is
 signed and attached to the [Releases](https://github.com/benguedj/RL_Stats/releases).
@@ -224,6 +227,7 @@ Utilise la **Stats API officielle** de Rocket League : rien n'est injecté dans 
 avec l'anti-cheat. Les données restent sur ton PC (`%APPDATA%\RL Stats`).
 
 **Signature et confidentialité** : les versions officielles sont construites par GitHub Actions
-depuis ce dépôt, puis signées gratuitement par [SignPath.io](https://about.signpath.io) (certificat de
-[SignPath Foundation](https://signpath.org)). Le seul accès à Internet est la vérification des mises à
+depuis ce dépôt. La signature gratuite par [SignPath.io](https://about.signpath.io) (certificat de
+[SignPath Foundation](https://signpath.org)) est en cours de mise en place : les versions actuelles
+ne sont pas encore signées. Le seul accès à Internet est la vérification des mises à
 jour (`api.github.com`, désactivable). Détails dans la [Code signing policy](#code-signing-policy).
