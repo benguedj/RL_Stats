@@ -61,7 +61,7 @@ DATA_FILE = os.path.join(DATA_DIR, "stats.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "matches.json")
 LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
 
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.6.1"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
 # "Application ID" Discord (https://discord.com/developers/applications) : vide = statut Discord indisponible
@@ -951,6 +951,9 @@ class MatchTracker:
         self.boost = [0, 0, 0, 0]  # echantillons, somme du boost, a 0 boost, supersonique
         self.boost_missing = 0  # echantillons ou le jeu n'a pas envoye la valeur du boost
         self.boost_min = None
+        self.clock = None  # secondes restantes (ou ecoulees en prolongation)
+        self.overtime = False
+        self.decided = False  # le jeu a signale un vainqueur (bHasWinner)
 
     @property
     def mode(self):
@@ -967,6 +970,8 @@ class MatchTracker:
             if guid and guid != self.guid:  # app lancee en cours de match
                 self.reset(guid)
             self._observe(data)
+        elif event == "ClockUpdatedSeconds":
+            self._clock(data)
         elif event == "PlayerJoined":
             if data.get("PlayerName") and valid_id(data.get("PrimaryId")):
                 self.ids[data["PlayerName"]] = data["PrimaryId"]
@@ -1002,11 +1007,33 @@ class MatchTracker:
         elif event == "MatchEnded":
             self._finish(guid, data.get("WinnerTeamNum"))
         elif event == "MatchDestroyed":
-            # Quitter un match en cours = defaite
+            # Quitter un match en cours = defaite, sauf si le match etait deja joue : le jeu n'envoie
+            # MatchEnded qu'a la fin du replay du dernier but, qu'on peut quitter avant
             if self.guid and self.started and not self.finished:
-                log("Match quitte avant la fin -> defaite")
-                self._finish(self.guid, None, forfeit=True)
+                winner = self._decided_winner()
+                if winner is not None:
+                    log(f"Match quitte apres la fin du temps -> resultat d'apres le score (gagnant={winner})")
+                    self._finish(self.guid, winner)
+                else:
+                    log("Match quitte avant la fin -> defaite")
+                    self._finish(self.guid, None, forfeit=True)
             self.reset(None)
+
+    def _clock(self, data):
+        if isinstance(data.get("TimeSeconds"), (int, float)):
+            self.clock = data["TimeSeconds"]
+        if data.get("bOvertime") is not None:
+            self.overtime = bool(data["bOvertime"])
+
+    def _decided_winner(self):
+        """Equipe en tete si le temps est ecoule (ou en prolongation, ou vainqueur signale), sinon None."""
+        if not (self.decided or self.overtime or self.clock == 0):
+            return None
+        goals = self.team_scores or self.team_goals
+        blue, orange = goals.get(0) or 0, goals.get(1) or 0
+        if blue == orange:
+            return None
+        return 0 if blue > orange else 1
 
     def _resolve_goals(self):
         """Attribue chaque but annonce a l'equipe dont le score vient d'augmenter. Si le jeu n'envoie
@@ -1073,6 +1100,9 @@ class MatchTracker:
             if self.counted_scores is None and not self.pending_goals:
                 self.counted_scores = dict(self.team_scores)  # match rejoint en cours : scores deja la
         self._resolve_goals()
+        if self.guid:
+            self._clock(game)
+            self.decided = self.decided or bool(game.get("bHasWinner"))
         if game.get("bReplay"):
             return
         ball = game.get("Ball") or {}
