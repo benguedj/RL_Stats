@@ -40,33 +40,6 @@ jobs:
           python -m pip install -r requirements.txt -r requirements-build.txt
           pyinstaller --noconfirm rl_stats.spec
 
-      - name: Upload unsigned exe
-        id: unsigned
-        uses: actions/upload-artifact@v4
-        with:
-          name: rl-stats-unsigned
-          path: dist/RL Stats.exe
-
-      # Signature SignPath : s'active toute seule une fois la variable de depot
-      # SIGNPATH_ORGANIZATION_ID et le secret SIGNPATH_API_TOKEN configures
-      # (Settings > Secrets and variables > Actions).
-      - name: Sign exe (SignPath)
-        if: vars.SIGNPATH_ORGANIZATION_ID != ''
-        uses: signpath/github-action-submit-signing-request@v1
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: RL_Stats
-          signing-policy-slug: ${{ startsWith(github.ref, 'refs/tags/') && 'release-signing' || 'test-signing' }}
-          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
-          wait-for-completion: true
-          output-artifact-directory: signed
-
-      - name: Use signed exe
-        if: vars.SIGNPATH_ORGANIZATION_ID != ''
-        shell: pwsh
-        run: Copy-Item -Force "signed/RL Stats.exe" "dist/RL Stats.exe"
-
       - name: Package zip
         shell: pwsh
         run: |

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RL Stats: privacy policy</title>
+<meta name="description" content="RL Stats privacy policy: no account, no analytics, your stats stay on your PC.">
+<link rel="icon" type="image/png" href="rl_stats.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,700;1,800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b1220;
+    --line: #24314d;
+    --text: #e8edf6;
+    --muted: #93a1bb;
+    --win: #2ee26b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 "Barlow", system-ui, sans-serif;
+  }
+  html[lang="fr"] [lang="en"], html[lang="en"] [lang="fr"] { display: none !important; }
+  a { color: var(--win); }
+  code { background: #141e33; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 14px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px; }
+  h1, h2, .brand {
+    font-family: "Barlow Condensed", sans-serif;
+    font-style: italic;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+  }
+  h1 { font-size: clamp(34px, 7vw, 48px); line-height: 1.05; margin: 48px 0 4px; }
+  h2 { font-size: 26px; margin: 40px 0 8px; }
+  .date { color: var(--muted); margin: 0 0 24px; }
+  ul { padding-left: 20px; }
+  li { margin-bottom: 8px; }
+  li, p { color: #c9d3e6; }
+  b { color: var(--text); }
+
+  nav { border-bottom: 1px solid var(--line); }
+  nav .wrap { display: flex; align-items: center; gap: 16px; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 800; color: var(--text); text-decoration: none; }
+  .brand img { width: 32px; height: 32px; border-radius: 8px; }
+  .lang { margin-left: auto; display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .lang button {
+    background: none; border: 0; color: var(--muted); padding: 4px 10px; cursor: pointer;
+    font: 600 13px "Barlow", sans-serif;
+  }
+  .lang button[aria-pressed="true"] { background: var(--line); color: var(--text); }
+  footer { border-top: 1px solid var(--line); margin-top: 56px; padding: 32px 0 48px; color: var(--muted); font-size: 14px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="./"><img src="rl_stats.png" alt="">RL Stats</a>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang="en">EN</button>
+      <button type="button" data-lang="fr">FR</button>
+    </div>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<div lang="en">
+  <h1>Privacy policy</h1>
+  <p class="date">Last updated: October 29, 2026</p>
+
+  <p>RL Stats is a free, open-source overlay for Rocket League, made by Benjamin Guedj. It has no account,
+    no analytics, no ads, and it doesn't collect, sell or share any personal data. This page explains
+    exactly what it stores and what it connects to. It applies to every version: Microsoft Store, zip
+    download and winget.</p>
+
+  <h2>What is stored on your PC</h2>
+  <p>Everything RL Stats saves stays on your computer, in <code>%APPDATA%\RL Stats</code>:</p>
+  <ul>
+    <li><b>Settings</b> (overlay style, colors, options) and your current session.</li>
+    <li><b>Match history</b>: result, mode, score and stats of each online match, with the in-game names and
+      platform IDs of the players in it (used for your teammate stats and the "opponents met before" feature).</li>
+    <li><b>A log file</b> used to diagnose problems.</li>
+  </ul>
+  <p>None of this is sent anywhere. To delete it, delete that folder. It is kept when you uninstall the app,
+    so you don't lose your history if you reinstall.</p>
+  <p>RL Stats also enables Rocket League's Stats API in <code>Documents\My Games\Rocket League\TAGame\Config\TAStatsAPI.ini</code>
+    and reads the game's display settings in the same folder.</p>
+
+  <h2>Network connections</h2>
+  <ul>
+    <li><b>Rocket League Stats API</b>: match events are read from a local socket provided by the game
+      (<code>127.0.0.1:49123</code>). Nothing leaves your PC.</li>
+    <li><b>Update check</b> (zip and winget versions only): at startup, the app asks the GitHub API
+      (<code>api.github.com</code>) for the latest version number. No personal data is sent; GitHub sees your IP
+      address, as with any web request. It can be turned off in the settings. The Microsoft Store version
+      doesn't do this: the Store handles updates.</li>
+    <li><b>Discord status</b> (off by default): your mode, session score and streak are sent to the Discord app
+      running on your PC, which shows them on your profile.</li>
+    <li><b>Streamer mode</b> (off by default): a page for OBS served on <code>127.0.0.1</code> only, not reachable
+      from other devices.</li>
+    <li><b>Links</b> (this website, GitHub, player profiles on rocketleague.tracker.network) open in your browser,
+      only when you click them.</li>
+  </ul>
+
+  <h2>This website</h2>
+  <p>This site is hosted by GitHub Pages and uses no cookies or trackers. It loads fonts from Google Fonts and asks
+    the GitHub API for the latest version number. The demo video is loaded from YouTube only when you click play.</p>
+
+  <h2>Changes and contact</h2>
+  <p>If this policy changes, this page is updated with a new date. Questions:
+    <a href="https://github.com/benguedj/RL_Stats/issues">open an issue on GitHub</a>.</p>
+</div>
+
+<div lang="fr">
+  <h1>Politique de confidentialité</h1>
+  <p class="date">Dernière mise à jour : 29 octobre 2026</p>
+
+  <p>RL Stats est un overlay gratuit et open source pour Rocket League, réalisé par Benjamin Guedj. Pas de compte,
+    pas de statistiques d'utilisation, pas de publicité : il ne collecte, ne vend et ne partage aucune donnée
+    personnelle. Cette page détaille ce qu'il enregistre et à quoi il se connecte. Elle s'applique à toutes les
+    versions : Microsoft Store, zip et winget.</p>
+
+  <h2>Ce qui est enregistré sur ton PC</h2>
+  <p>Tout ce que RL Stats enregistre reste sur ton ordinateur, dans <code>%APPDATA%\RL Stats</code> :</p>
+  <ul>
+    <li><b>Les réglages</b> (style de l'overlay, couleurs, options) et ta session en cours.</li>
+    <li><b>L'historique des matchs</b> : résultat, mode, score et stats de chaque match en ligne, avec les pseudos et
+      identifiants de plateforme des joueurs présents (pour les stats de coéquipiers et les « adversaires déjà croisés »).</li>
+    <li><b>Un fichier journal</b> qui sert à diagnostiquer les problèmes.</li>
+  </ul>
+  <p>Rien de tout ça n'est envoyé où que ce soit. Pour l'effacer, supprime ce dossier. Il est conservé quand tu
+    désinstalles l'appli, pour ne pas perdre ton historique si tu la réinstalles.</p>
+  <p>RL Stats active aussi la Stats API de Rocket League dans <code>Documents\My Games\Rocket League\TAGame\Config\TAStatsAPI.ini</code>
+    et lit les réglages d'affichage du jeu dans le même dossier.</p>
+
+  <h2>Connexions réseau</h2>
+  <ul>
+    <li><b>Stats API de Rocket League</b> : les événements de match sont lus sur un socket local fourni par le jeu
+      (<code>127.0.0.1:49123</code>). Rien ne sort de ton PC.</li>
+    <li><b>Vérification des mises à jour</b> (versions zip et winget uniquement) : au démarrage, l'appli demande à
+      l'API GitHub (<code>api.github.com</code>) le numéro de la dernière version. Aucune donnée personnelle n'est
+      envoyée ; GitHub voit ton adresse IP, comme pour toute requête web. Désactivable dans les paramètres.
+      La version Microsoft Store ne le fait pas : c'est le Store qui gère les mises à jour.</li>
+    <li><b>Statut Discord</b> (désactivé par défaut) : ton mode, le score de la session et ta série sont envoyés à
+      l'appli Discord de ton PC, qui les affiche sur ton profil.</li>
+    <li><b>Mode streamer</b> (désactivé par défaut) : une page pour OBS servie sur <code>127.0.0.1</code> uniquement,
+      inaccessible depuis les autres appareils.</li>
+    <li><b>Liens</b> (ce site, GitHub, profils des joueurs sur rocketleague.tracker.network) : ouverts dans ton
+      navigateur, seulement quand tu cliques dessus.</li>
+  </ul>
+
+  <h2>Ce site</h2>
+  <p>Ce site est hébergé par GitHub Pages et n'utilise ni cookies ni traceurs. Il charge des polices depuis Google Fonts
+    et demande à l'API GitHub le numéro de la dernière version. La vidéo de démo n'est chargée depuis YouTube que
+    quand tu cliques sur lecture.</p>
+
+  <h2>Modifications et contact</h2>
+  <p>Si cette politique change, cette page est mise à jour avec une nouvelle date. Pour toute question :
+    <a href="https://github.com/benguedj/RL_Stats/issues">ouvre une issue sur GitHub</a>.</p>
+</div>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span lang="en">Fan-made project, not affiliated with or endorsed by Psyonix or Epic Games. Rocket League is a trademark of Psyonix LLC.</span>
+    <span lang="fr">Projet de fan, sans lien avec Psyonix ou Epic Games. Rocket League est une marque de Psyonix LLC.</span>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+
+    function setLang(lang) {
+      root.lang = lang;
+      document.querySelectorAll(".lang button").forEach(function (b) {
+        b.setAttribute("aria-pressed", b.dataset.lang === lang);
+      });
+    }
+
+    var saved = null;
+    try { saved = localStorage.getItem("lang"); } catch (e) {}
+    setLang(saved || ((navigator.language || "").toLowerCase().indexOf("fr") === 0 ? "fr" : "en"));
+
+    document.querySelectorAll(".lang button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        setLang(b.dataset.lang);
+        try { localStorage.setItem("lang", b.dataset.lang); } catch (e) {}
+      });
+    });
+  })();
+</script>
+</body>
+</html>
