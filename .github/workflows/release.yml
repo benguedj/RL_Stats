@@ -84,6 +84,17 @@ jobs:
             dist/RL Stats.zip
             dist/SHA256SUMS.txt
 
+      # Package Microsoft Store (non signe : le Store le signe). A telecharger
+      # depuis l'onglet Actions puis a soumettre dans Partner Center.
+      - name: Build MSIX
+        shell: pwsh
+        run: python packaging/msix/build_msix.py "dist/RL Stats.exe" dist/RLStats.msix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rl-stats-msix
+          path: dist/RLStats.msix
+
       # Cree la release en brouillon (ou remplace les fichiers si celle du tag
       # existe deja), puis la publie une fois les fichiers en ligne : l'appli ne
       # voit jamais une release sans son zip.

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Manifeste du package Microsoft Store. Construit par build_msix.py ({VERSION} est remplace
+     par APP_VERSION). Identity et PublisherDisplayName viennent de Partner Center :
+     Gestion des produits > Identite du produit. -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop desktop6 rescap">
+
+  <Identity Name="BenjaminGuedj.RLStats" Publisher="CN=6FF8B51F-887B-4EE7-B189-77B1D79EE326" Version="{VERSION}" ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>RL Stats</DisplayName>
+    <PublisherDisplayName>Benjamin Guedj</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <!-- Donnees dans le vrai %APPDATA%\RL Stats : partagees avec la version zip et
+         conservees si on desinstalle (sinon Windows les isole dans le package). -->
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+    <Resource Language="fr-fr" />
+  </Resources>
+
+  <Applications>
+    <Application Id="RLStats" Executable="RLStats.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="RL Stats" Description="Win / loss tracker overlay"
+        BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- Demarrage avec Windows (case dans Parametres), meme Id que STARTUP_TASK_ID -->
+        <desktop:Extension Category="windows.startupTask" Executable="RLStats.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="RLStatsStartup" Enabled="false" DisplayName="RL Stats" />
+        </desktop:Extension>
+        <!-- "rlstats" dans un terminal ou Win+R, comme avec winget -->
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="RLStats.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="rlstats.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+</Package>

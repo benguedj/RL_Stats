@@ -318,11 +318,12 @@ class SettingsWindow:
                lambda: self.changed("auto_hide")).pack(fill="x", padx=12, pady=6)
         startup = tk.BooleanVar(value=self.app.startup_enabled())
         _check(f, T("s_startup"), startup,
-               lambda: self.app.set_startup(startup.get())).pack(fill="x", padx=12, pady=6)
+               lambda: startup.set(self.app.set_startup(startup.get()))).pack(fill="x", padx=12, pady=6)
         _check(f, T("s_resume"), self.var("resume_session", tk.BooleanVar),
                lambda: self.changed("resume_session")).pack(fill="x", padx=12, pady=6)
-        _check(f, T("s_updates"), self.var("check_updates", tk.BooleanVar),
-               lambda: self.changed("check_updates")).pack(fill="x", padx=12, pady=6)
+        if not self.app.packaged:  # version Store : mises a jour par le Store
+            _check(f, T("s_updates"), self.var("check_updates", tk.BooleanVar),
+                   lambda: self.changed("check_updates")).pack(fill="x", padx=12, pady=6)
         tk.Label(f, text=T("s_version", v=self.app.version), bg=PANEL, fg=MUTED, font=("Segoe UI", 9),
                  anchor="w").pack(fill="x", padx=12, pady=(0, 8))
 

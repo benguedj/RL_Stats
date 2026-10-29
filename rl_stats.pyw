@@ -156,7 +156,32 @@ def rocket_league_running():
         return False
 
 
+def is_packaged():
+    """Vrai si l'appli tourne depuis son package MSIX (version Microsoft Store)."""
+    length = ctypes.c_uint32(0)
+    # ERROR_INSUFFICIENT_BUFFER (122) : il y a un package ; APPMODEL_ERROR_NO_PACKAGE (15700) : non
+    return ctypes.windll.kernel32.GetCurrentPackageFullName(ctypes.byref(length), None) == 122
+
+
+# Version Store : le Store fait les mises a jour, et le demarrage avec Windows
+# passe par la StartupTask declaree dans le manifeste (packaging/msix).
+PACKAGED = is_packaged()
+STARTUP_TASK_ID = "RLStatsStartup"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
+def winrt_wait(operation):
+    """Attend une operation asynchrone WinRT (asyncio.run n'accepte que des coroutines)."""
+    import asyncio
+
+    async def wait():
+        return await operation
+    return asyncio.run(wait())
+
+
+def startup_task():
+    from winrt.windows.applicationmodel import StartupTask
+    return winrt_wait(StartupTask.get_async(STARTUP_TASK_ID))
 
 
 def launch_command():
@@ -167,6 +192,13 @@ def launch_command():
 
 
 def startup_enabled():
+    if PACKAGED:
+        from winrt.windows.applicationmodel import StartupTaskState
+        try:
+            return startup_task().state in (StartupTaskState.ENABLED, StartupTaskState.ENABLED_BY_POLICY)
+        except Exception as e:  # ne doit jamais empecher d'ouvrir les Parametres
+            log(f"StartupTask illisible : {e!r}")
+            return False
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
             winreg.QueryValueEx(key, "RL Stats")
@@ -176,20 +208,32 @@ def startup_enabled():
 
 
 def set_startup(enabled):
-    """Demarrage avec Windows (cle Run de l'utilisateur, aucun droit admin necessaire)."""
+    """Demarrage avec Windows (cle Run de l'utilisateur, aucun droit admin necessaire).
+    Renvoie l'etat obtenu : Windows refuse de reactiver une StartupTask coupee par
+    l'utilisateur dans le Gestionnaire des taches."""
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+        if PACKAGED:
+            task = startup_task()
             if enabled:
-                winreg.SetValueEx(key, "RL Stats", 0, winreg.REG_SZ, launch_command())
+                winrt_wait(task.request_enable_async())
             else:
-                with contextlib.suppress(FileNotFoundError):
-                    winreg.DeleteValue(key, "RL Stats")
-    except OSError as e:
+                task.disable()
+        else:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+                if enabled:
+                    winreg.SetValueEx(key, "RL Stats", 0, winreg.REG_SZ, launch_command())
+                else:
+                    with contextlib.suppress(FileNotFoundError):
+                        winreg.DeleteValue(key, "RL Stats")
+    except Exception as e:  # registre ou StartupTask : la case reflete l'etat reel
         log(f"Demarrage avec Windows impossible : {e}")
+    return startup_enabled()
 
 
 def migrate_startup():
     """Jusqu'a la version 1.1, le demarrage avec Windows etait enregistre sous "RL Overlay"."""
+    if PACKAGED:
+        return
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ | winreg.KEY_SET_VALUE) as key:
             winreg.QueryValueEx(key, "RL Overlay")
@@ -1563,9 +1607,9 @@ class Overlay:
         if DISCORD_CLIENT_ID:
             self.discord.start()
             self.update_presence()
-        if self.store["check_updates"]:
+        if self.store["check_updates"] and not PACKAGED:
             threading.Thread(target=check_update, args=(self.q,), daemon=True).start()
-        if getattr(sys, "frozen", False):
+        if getattr(sys, "frozen", False) and not PACKAGED:
             threading.Thread(target=remove_old_exe, daemon=True).start()
         if UPDATED_FLAG in sys.argv:
             self.queue_banner(T("updated", v=APP_VERSION), designs.GREEN, None, 6)
@@ -1695,6 +1739,7 @@ class Overlay:
 
     # Pour la fenetre Parametres
     version = APP_VERSION
+    packaged = PACKAGED
     discord_available = bool(DISCORD_CLIENT_ID)
     startup_enabled = staticmethod(startup_enabled)
     set_startup = staticmethod(set_startup)

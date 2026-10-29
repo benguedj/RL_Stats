@@ -1,1 +1,5 @@
 Pillow>=10.0
+# Version Microsoft Store (MSIX) : demarrage avec Windows via StartupTask
+winrt-runtime==3.2.1
+winrt-Windows.ApplicationModel==3.2.1
+winrt-Windows.Foundation==3.2.1
