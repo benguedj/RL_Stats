@@ -86,7 +86,8 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 ### Streamer mode (OBS)
 
 Settings → *Streamer mode*, then in OBS: **Sources → + → Browser**, URL `http://127.0.0.1:49124/`,
-width 600, height 260. The server only listens on `127.0.0.1` (not reachable from the network).
+width 600, height 260. The page shows the same design and shape as the in-game overlay (Appearance menu).
+The server only listens on `127.0.0.1` (not reachable from the network).
 
 ## FAQ
 

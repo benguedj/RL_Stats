@@ -1,6 +1,7 @@
 """Mode streamer : petite page web locale a ajouter dans OBS comme "source navigateur".
 
-http://127.0.0.1:49124/ affiche le compteur ; la page relit /state chaque seconde.
+http://127.0.0.1:49124/ affiche l'overlay avec le design choisi dans le menu Apparence : l'appli
+y envoie son rendu (/overlay.png) ; la page relit /state chaque seconde.
 Le serveur n'ecoute que sur 127.0.0.1 (invisible depuis le reseau).
 """
 
@@ -10,37 +11,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 OBS_PORT = 49124
 OBS_URL = f"http://127.0.0.1:{OBS_PORT}/"
+OBS_K = 1.0  # echelle de l'image envoyee (1440p, interface a 100 %) : on la redimensionne dans OBS
 
 PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><title>RL Stats</title>
 <style>
-  :root { --win: #2ee66b; --loss: #ff4d4d; --panel: rgba(11,19,34,.92); --mid: rgba(20,31,54,.92);
-          --edge: #344666; --fg: #f1f5f9; --muted: #8c98ad; --amber: #f59e0b; }
-  html, body { margin: 0; background: transparent; overflow: hidden; }
-  body { font-family: Bahnschrift, "Segoe UI", sans-serif; font-weight: 600; font-stretch: 75%;
-         color: var(--fg); display: flex; justify-content: center; padding-top: 40px; }
-  #wrap { position: relative; width: 420px; }
-  #board { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 4px; height: 70px; position: relative; z-index: 1; }
-  .side { background: var(--panel); border: 1.5px solid var(--edge); display: flex; align-items: center;
-          justify-content: center; gap: 12px; position: relative; transition: background .4s; }
-  .side::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px; }
-  #win { clip-path: polygon(0 0, 100% 0, 100% 100%, 18px 100%); }
-  #loss { clip-path: polygon(0 0, 100% 0, calc(100% - 18px) 100%, 0 100%); }
-  #win::before { background: var(--win); }  #loss::before { background: var(--loss); }
-  .tag { font-size: 22px; font-style: italic; }  #win .tag { color: var(--win); }  #loss .tag { color: var(--loss); }
-  .num { font-size: 46px; font-style: italic; font-variant-numeric: tabular-nums; }
-  #mid { background: var(--mid); border: 1.5px solid var(--edge); display: flex; flex-direction: column;
-         align-items: center; justify-content: center; }
-  #pct { font-size: 32px; font-style: italic; line-height: 1; }
-  #sub { font-size: 14px; color: var(--muted); letter-spacing: .04em; margin-top: 4px; }
-  #info { margin: 5px auto 0; width: 62%; text-align: center; font-size: 16px; padding: 3px 0;
-          clip-path: polygon(0 0, 100% 0, calc(100% - 10px) 100%, 10px 100%); visibility: hidden; }
-  #goal { margin: 6px auto 0; width: 62%; height: 8px; background: var(--panel); border: 1px solid var(--edge);
-          border-radius: 4px; overflow: hidden; visibility: hidden; }
-  #goal div { height: 100%; background: var(--win); border-radius: 4px; transition: width .6s; }
-  #fx { position: absolute; left: -90px; top: -40px; width: 600px; height: 260px; pointer-events: none; z-index: 2; }
-  .glow-w #board { filter: drop-shadow(0 0 14px var(--win)); }
-  .glow-l #board { filter: drop-shadow(0 0 14px var(--loss)); }
+  :root { --win: #2ee66b; --loss: #ff4d4d; }
+  html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  #wrap { position: absolute; visibility: hidden; }
+  #ov { display: block; }
+  #fx { position: absolute; width: 600px; height: 260px; pointer-events: none; }
+  .glow-w #ov { filter: drop-shadow(0 0 14px var(--win)); }
+  .glow-l #ov { filter: drop-shadow(0 0 14px var(--loss)); }
   .pop { animation: pop .7s cubic-bezier(.3,1.6,.5,1); }
   .shake { animation: shake .6s; }
   @keyframes pop { 0% { transform: scale(1); } 35% { transform: scale(1.12); } 100% { transform: scale(1); } }
@@ -50,18 +32,13 @@ PAGE = """<!doctype html>
 </style></head>
 <body>
 <div id="wrap">
-  <div id="board">
-    <div class="side" id="win"><span class="tag">W</span><span class="num" id="w">0</span></div>
-    <div id="mid"><div id="pct">0%</div><div id="sub"></div></div>
-    <div class="side" id="loss"><span class="num" id="l">0</span><span class="tag">L</span></div>
-  </div>
-  <div id="info"></div>
-  <div id="goal"><div></div></div>
+  <img id="ov" alt="">
   <canvas id="fx" width="600" height="260"></canvas>
 </div>
 <script>
 const $ = id => document.getElementById(id);
-let lastEvent = null, particles = [], raf = null;
+const MARGIN = 24;  // place pour le rebond et le halo
+let lastEvent = null, particles = [], raf = null, wanted = null, shown = null;
 
 function burst(kind) {
   const css = getComputedStyle(document.documentElement);
@@ -102,29 +79,37 @@ function play(kind) {
   burst(kind);
 }
 
+// Meme ancrage que dans le jeu : les designs verticaux collent au bord droit, les autres
+// sont centres en bas (l'image grandit vers le haut quand un bandeau apparait).
+function place() {
+  if (!shown) return;
+  const s = shown, [w, h] = s.size, [ax, ay] = s.anchor, [x0, y0, x1, y1] = s.box;
+  const wrap = $("wrap"), fx = $("fx"), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  wrap.style.width = w + "px"; wrap.style.height = h + "px";
+  wrap.style.left = (s.kind === "edge" ? innerWidth - MARGIN - w : innerWidth / 2 - ax) + "px";
+  wrap.style.top = (s.kind === "edge" ? innerHeight / 2 - ay : innerHeight - MARGIN - h) + "px";
+  wrap.style.transformOrigin = cx + "px " + cy + "px";
+  fx.style.left = (cx - 300) + "px"; fx.style.top = (cy - 75) + "px";
+  wrap.style.visibility = "visible";
+}
+
 async function refresh() {
   try {
     const s = await (await fetch("/state", { cache: "no-store" })).json();
+    if (!s.img) return;
     const root = document.documentElement.style;
     root.setProperty("--win", s.win_color); root.setProperty("--loss", s.loss_color);
-    $("w").textContent = s.w; $("l").textContent = s.l; $("pct").textContent = s.pct + "%";
-    $("sub").textContent = s.sub;
-    const info = $("info");
-    if (s.info) {
-      info.textContent = s.info.text; info.style.visibility = "visible";
-      info.style.background = s.info.filled ? s.info.color : "var(--panel)";
-      info.style.color = s.info.filled ? "#0b1322" : s.info.color;
-    } else info.style.visibility = "hidden";
-    const goal = $("goal");
-    goal.style.visibility = s.goal ? "visible" : "hidden";
-    if (s.goal) goal.firstElementChild.style.width = Math.min(100, s.goal.w * 100 / s.goal.goal) + "%";
-    $("win").style.background = s.flash === "w" ? "color-mix(in srgb, var(--win) 35%, #0b1322)" : "";
-    $("loss").style.background = s.flash === "l" ? "color-mix(in srgb, var(--loss) 35%, #0b1322)" : "";
+    if (s.img !== wanted) {  // nouvelle image : chargee a part, puis echangee d'un coup
+      wanted = s.img;
+      const next = new Image();
+      next.onload = () => { if (s.img === wanted) { $("ov").src = next.src; shown = s; place(); } };
+      next.src = "/overlay.png?v=" + s.img;
+    }
     if (s.event && lastEvent !== null && s.event.id !== lastEvent && s.animations) play(s.event.kind);
     lastEvent = s.event ? s.event.id : 0;
-    document.body.style.visibility = s.hidden ? "hidden" : "visible";
   } catch (e) { /* overlay ferme : on garde le dernier affichage */ }
 }
+addEventListener("resize", place);
 refresh();
 setInterval(refresh, 1000);
 </script>
@@ -135,11 +120,13 @@ setInterval(refresh, 1000);
 class ObsServer:
     def __init__(self, log=print):
         self.log = log
-        self.state = {}
+        self.state = ({}, b"")  # (etat, image PNG)
+        self.version = 0
         self.server = None
 
-    def update(self, state):
-        self.state = state  # remplacement atomique, lu par le thread du serveur
+    def update(self, state, png):
+        self.version += 1
+        self.state = (dict(state, img=self.version), png)  # remplacement atomique, lu par le thread du serveur
 
     def start(self):
         if self.server:
@@ -148,8 +135,11 @@ class ObsServer:
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
+                state, png = owner.state
                 if self.path.split("?")[0] == "/state":
-                    body, ctype = json.dumps(owner.state).encode("utf-8"), "application/json"
+                    body, ctype = json.dumps(state).encode("utf-8"), "application/json"
+                elif self.path.split("?")[0] == "/overlay.png" and png:
+                    body, ctype = png, "image/png"
                 elif self.path.split("?")[0] in ("/", "/index.html"):
                     body, ctype = PAGE.encode("utf-8"), "text/html; charset=utf-8"
                 else:

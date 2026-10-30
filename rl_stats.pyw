@@ -42,7 +42,7 @@ import synth  # noqa: E402
 from discord_rpc import DiscordPresence  # noqa: E402
 from history import History  # noqa: E402
 from i18n import T  # noqa: E402
-from obs_server import OBS_URL, ObsServer  # noqa: E402
+from obs_server import OBS_K, OBS_URL, ObsServer  # noqa: E402
 from ui_windows import WARN, HistoryWindow, SettingsWindow, hex_to_rgb, show_notice, show_welcome  # noqa: E402
 
 if getattr(sys, "frozen", False):
@@ -61,7 +61,7 @@ DATA_FILE = os.path.join(DATA_DIR, "stats.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "matches.json")
 LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
 
-APP_VERSION = "1.6.2"
+APP_VERSION = "1.6.3"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
 # "Application ID" Discord (https://discord.com/developers/applications) : vide = statut Discord indisponible
@@ -1530,6 +1530,7 @@ class Overlay:
         self._geom = None
         self._box = None  # partie visible du rendu (hors survol), relative a l'ancre
         self._box_key = None
+        self._obs = None  # rendu pour OBS (sans sous-titre) : (image, emplacement, ancre)
         self.hidden = False
         self.hover = False
         self.buttons = {}
@@ -1929,24 +1930,34 @@ class Overlay:
             x0, y0, x1, y1 = self._base[0].getchannel("A").getbbox() or (0, 0, 0, 0)
             self._box, self._box_key = (x0 - ax, y0 - ay, x1 - ax, y1 - ay), box_key
         self.present()
+        self._obs = None
         self.publish(state)
         self.shell.set_tip(T("tray_tip", w=w, l=l))
 
     def publish(self, state):
-        """Etat envoye a la page OBS."""
+        """Image et etat envoyes a la page OBS : le meme design que l'overlay, a l'echelle 1440p
+        (on redimensionne la source dans OBS) et sans les boutons du survol."""
         if not self.store["obs"]:
             return
-        info = state["info"]
-        goal = self.store["goal"]
-        w, l = state["w"], state["l"]
+        if self._obs is None:
+            if self.design_k() == OBS_K and not self.hover:
+                _, ax, ay, _ = self._base
+                self._obs = (self._bare, self._slot, (ax, ay))
+            else:
+                slot = []
+                bare, anchor, _ = self.renderer()[1](dict(state, sub_slot=slot), OBS_K)
+                self._obs = (bare, slot, anchor)
+        bare, slot, (ax, ay) = self._obs
+        img = designs.paste_sub(bare, slot, state["sub"])
+        buf = io.BytesIO()
+        img.save(buf, "PNG", compress_level=1)
         self.obs.update({
-            "w": w, "l": l, "pct": round(w * 100 / (w + l)) if w + l else 0, "sub": state["sub"],
-            "info": {"text": info[0], "color": rgb_hex(info[1]), "filled": info[2]} if info else None,
-            "goal": {"w": self.total_wins(), "goal": goal} if goal else None,
-            "win_color": self.store["win_color"], "loss_color": self.store["loss_color"], "flash": state["flash"],
+            "size": img.size, "anchor": [ax, ay], "kind": self.renderer()[2],
+            "box": img.getchannel("A").getbbox() or (0, 0, *img.size),
+            "win_color": self.store["win_color"], "loss_color": self.store["loss_color"],
             "event": {"id": self.event_id, "kind": self.event_kind} if self.event_id else None,
             "animations": self.store["animations"],
-        })
+        }, buf.getvalue())
 
     def present(self):
         """Affiche le dernier rendu, avec l'animation de fin de match par-dessus s'il y en a une."""
