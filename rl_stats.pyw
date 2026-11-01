@@ -37,11 +37,13 @@ sys.path[:0] = [os.path.join(APP_DIR, "_lib"), APP_DIR]  # Pillow embarque dans 
 
 import designs  # noqa: E402
 import i18n  # noqa: E402
+import pad  # noqa: E402
 import popup_menu as pm  # noqa: E402
 import synth  # noqa: E402
 from history import History  # noqa: E402
 from i18n import T  # noqa: E402
 from obs_server import OBS_K, OBS_URL, ObsServer  # noqa: E402
+from training import TrainingWindow, flip_card_info, seconds_text  # noqa: E402
 from ui_windows import WARN, HistoryWindow, SettingsWindow, hex_to_rgb, show_notice, show_welcome  # noqa: E402
 
 if getattr(sys, "frozen", False):
@@ -804,6 +806,14 @@ class Store:
         "goal_alert": True, "session_timer": True,
         "obs": False, "hotkeys": True, "tray": True, "taskbar": True,
         "auto_hide": True, "resume_session": True, "check_updates": True, "tilt_alert": False,
+        "kickoff_alert": False,  # chrono de chaque engagement sur l'overlay (fenetre Entrainement)
+        "kick_targets": {"diag": 2.05, "offc": 2.3, "back": 2.6},  # objectif du defi par position (secondes)
+        "drill": [],  # essais du defi d'engagements : {"t", "spawn", "dt", "miss", "exact", "flip"}
+        "pad": dict(pad.DEFAULT_BINDINGS),  # boutons de la manette (analyse du speed flip)
+        "stick_guide": False,  # guide du speed flip sur l'overlay (menu de l'overlay)
+        "flip_side": "auto",  # cote du flip montre par le guide : "auto" (celui du dernier essai), "l" ou "r"
+        "guide_pos": [],  # coin du guide en fractions de l'image du jeu ; vide : a droite, au-dessus de l'overlay
+        "training": {},  # mecanique -> 0 a travailler, 1 en cours, 2 maitrisee
         "session_saved": {},
         "offsets_1440": False,  # decalages en pixels 1440p (avant : pixels de l'ecran du moment)
     }
@@ -937,10 +947,11 @@ class ApiListener(threading.Thread):
                         chunk = sock.recv(65536)
                         if not chunk:
                             break
-                        for raw in stream.feed(decoder.decode(chunk)):
+                        received = time.perf_counter()  # date de reception : l'overlay ne lit la file que
+                        for raw in stream.feed(decoder.decode(chunk)):  # toutes les 100 ms
                             event, data = parse_message(raw)
                             if event:
-                                self.q.put(("event", (event, data)))
+                                self.q.put(("event", (event, data, received)))
             except OSError:
                 pass
             self.q.put(("status", False))
@@ -954,18 +965,34 @@ class ApiListener(threading.Thread):
 FEED_STATS = {"Goal": "goals", "Assist": "assists", "Save": "saves", "Shot": "shots", "Demolish": "demos"}
 STATE_STATS = {"Goals": "goals", "Assists": "assists", "Saves": "saves", "Shots": "shots", "Demos": "demos",
                "Score": "score"}
+KMH = 100000 / 3600  # la vitesse "Speed" du jeu est en km/h ; 1 unite du terrain = 1 cm
+
+
+def kick_spawn(distance):
+    """Position de depart d'un engagement d'apres la distance parcourue jusqu'au contact (unites du jeu) :
+    environ 3 100 en diagonale, 3 650 en decale, 4 400 au centre. None si ce n'etait pas un engagement."""
+    if 2600 <= distance < 3375:
+        return "diag"
+    if 3375 <= distance < 4025:
+        return "offc"
+    if 4025 <= distance < 4900:
+        return "back"
+    return None
 
 
 class MatchTracker:
     """Determine l'equipe du joueur, le mode, les stats et le resultat de chaque match."""
 
-    def __init__(self, store, on_result, on_start, on_goal):
+    def __init__(self, store, on_result, on_start, on_goal, on_kickoff):
         self.store = store
         self.on_result = on_result
         self.on_start = on_start  # a chaque coup d'envoi d'un match en ligne
         self.on_goal = on_goal  # (equipe qui marque, pseudo du buteur ou "")
+        self.on_kickoff = on_kickoff  # engagement (dict) : au premier contact (result None), puis son resultat
         self.last_players = []  # joueurs du dernier match vu (garde apres la fin du match)
         self.ids = {}  # pseudo -> PrimaryId (evenements PlayerJoined)
+        self.now = time.perf_counter()  # instant de reception du message en cours (voir handle)
+        self.last_round = -1e9  # dernier tir ou engagement hors ligne (perf_counter) : guide du speed flip
         self.reset(None)
 
     def reset(self, guid):
@@ -986,8 +1013,13 @@ class MatchTracker:
         self.started = False
         self.finished = False
         self.goal_spots = []  # [x, z] ou mes buts entrent dans la cage
-        self.kick = None  # engagement en cours : {"t": instant du premier contact}
+        # Engagement en cours : "go" (GO en match, premier mouvement en entrainement personnalise),
+        # "t" instant du premier contact, "dist" distance parcourue (vitesse du jeu integree)...
+        self.kick = None
         self.kickoffs = [0, 0, 0]  # gagnes, perdus, neutres
+        self.kick_first = [0, 0, 0]  # premier au ballon : moi, un coequipier, un adversaire
+        self.kick_times = []  # secondes entre le GO et mon contact, quand je touche en premier
+        self.kick_spawns = []  # position de depart de chacun de ces contacts ("diag", "offc", "back" ou "")
         self.last_ball = None  # derniere position connue du ballon
         self.boost = [0, 0, 0, 0]  # echantillons, somme du boost, a 0 boost, supersonique
         self.boost_missing = 0  # echantillons ou le jeu n'a pas envoye la valeur du boost
@@ -1000,7 +1032,10 @@ class MatchTracker:
     def mode(self):
         return f"{self.team_size}v{self.team_size}" if 1 <= self.team_size <= 4 else None
 
-    def handle(self, event, data):
+    def handle(self, event, data, received=None):
+        # Chronos des engagements dates a la reception du message, pas a son traitement. perf_counter :
+        # time.monotonic n'est precis qu'a 15,6 ms sous Windows
+        self.now = received if received is not None else time.perf_counter()
         guid = data.get("MatchGuid") or None
         if event not in ("UpdateState", "BallHit", "ClockUpdatedSeconds"):
             log(f"{event} {json.dumps(data, ensure_ascii=False)[:300]}")
@@ -1018,7 +1053,10 @@ class MatchTracker:
                 self.ids[data["PlayerName"]] = data["PrimaryId"]
         elif event == "RoundStarted":
             self.started = True
-            self.kick = {"t": None}  # coup d'envoi : on attend le premier contact
+            now = self.now
+            if not guid:
+                self.last_round = now
+            self.kick = {"go": now, "t": None, "dist": 0.0, "at": now, "v": 0.0, "ball_still": None}
             if self.guid and self.players:
                 self.on_start(self)
         elif event == "BallHit":
@@ -1026,7 +1064,11 @@ class MatchTracker:
             if loc:
                 self.last_ball = loc
             if self.kick is not None and self.kick["t"] is None:
-                self.kick["t"] = time.monotonic()
+                self._first_touch(data)
+        elif event == "CountdownBegin":
+            self.kick = None  # tir relance a la main en entrainement personnalise : essai abandonne
+            if not guid:
+                self.last_round = self.now
         elif event == "StatfeedEvent":
             name = (data.get("MainTarget") or {}).get("Name")
             if name:
@@ -1036,7 +1078,11 @@ class MatchTracker:
         elif event == "GoalScored":
             scorer = data.get("Scorer") or {}
             if not scorer.get("Name") and not data.get("GoalSpeed"):
-                return  # a la fin de chaque replay, le jeu renvoie un faux but (sans buteur ni vitesse)
+                # A la fin de chaque replay, le jeu renvoie un faux but (sans buteur ni vitesse). En
+                # entrainement personnalise, c'est aussi la fin du temps imparti : ballon pas touche a temps
+                if not self.guid and self.kick and self.kick["t"] is None:
+                    self._missed_kick()
+                return
             # L'equipe qui marque est connue quand le score du jeu change (_resolve_goals) : sur un but
             # contre son camp, le "buteur" est le dernier a avoir touche le ballon, dans l'equipe qui encaisse,
             # et la position d'impact envoyee est souvent celle du but precedent
@@ -1153,6 +1199,7 @@ class MatchTracker:
             self.started = self.started or bool(self.guid)
             if self.guid:
                 self._sample_boost(players)
+        self._track_kick(players, ball)
         self._check_kickoff()
         target = game.get("Target") or {}
         if game.get("bHasTarget") and target.get("Name"):
@@ -1183,17 +1230,77 @@ class MatchTracker:
         self.boost[2] += boost < 1  # la jauge affiche 0 en dessous de 1
         self.boost[3] += bool(p.get("bSupersonic"))
 
+    def _track_kick(self, players, ball):
+        """Pendant un engagement : distance parcourue par ma voiture (pour reconnaitre la position de depart)
+        et, en entrainement, ballon qui se met a bouger si le jeu n'envoie pas de BallHit."""
+        kick = self.kick
+        if not kick or kick["t"] is not None:
+            return
+        now = self.now
+        me = self.my_name().strip().lower()
+        p = next((p for p in players if p.get("Name", "").strip().lower() == me), None)
+        if p is not None and isinstance(p.get("Speed", 0), (int, float)):
+            v = float(p.get("Speed") or 0) * KMH
+            kick["dist"] += (kick["v"] + v) / 2 * (now - kick["at"])
+            kick["at"], kick["v"] = now, v
+        speed = ball.get("Speed")
+        if not isinstance(speed, (int, float)):
+            return
+        if kick["ball_still"] is None:
+            kick["ball_still"] = speed < 1
+        elif kick["ball_still"] and speed >= 1 and not self.guid and len(players) == 1:
+            self._first_touch({"Players": [p or {}]}, exact=False)
+
+    def _first_touch(self, data, exact=True):
+        """Premier contact apres le depart : qui, en combien de temps, depuis quelle position.
+        exact=False : contact deduit de l'etat du jeu (10 fois par seconde), pas d'un BallHit."""
+        kick = self.kick
+        kick["t"] = self.now
+        kick["dt"] = kick["t"] - kick["go"] - (0 if exact else 0.05)
+        kick["exact"], kick["miss"], kick["result"] = exact, False, None
+        toucher = ((data.get("Players") or [{}])[0]) or {}
+        team = self.my_team()
+        if toucher.get("Name", "").strip().lower() == self.my_name().strip().lower():
+            kick["who"] = "me"
+        elif team is not None and toucher.get("TeamNum") is not None:
+            kick["who"] = "mate" if int(toucher["TeamNum"]) == int(team) else "opp"
+        else:
+            kick["who"] = None
+        dist = kick["dist"] + kick["v"] * (kick["t"] - kick["at"])
+        kick["spawn"] = kick_spawn(dist) if kick["who"] == "me" else None
+        log(f"Engagement : contact {kick['who']} en {kick['dt']:.3f} s, {dist:.0f} u parcourues "
+            f"-> {kick['spawn']}{'' if exact else ' (contact deduit)'}")
+        if kick["who"] and kick["dt"] < 8:  # au-dela, personne n'est vraiment alle au ballon
+            if self.guid:
+                self.kick_first[("me", "mate", "opp").index(kick["who"])] += 1
+                if kick["who"] == "me":
+                    self.kick_times.append(round(kick["dt"], 2))
+                    self.kick_spawns.append(kick["spawn"] or "")
+            self.on_kickoff(dict(kick))
+
+    def _missed_kick(self):
+        """Entrainement personnalise : temps du tir ecoule sans toucher le ballon."""
+        kick, self.kick = self.kick, None
+        dt = self.now - kick["go"]
+        log(f"Engagement : pas touche en {dt:.3f} s, {kick['dist']:.0f} u parcourues")
+        if dt >= 1 and kick["dist"] >= 2000:  # sinon le joueur n'a pas vraiment tente l'engagement
+            self.on_kickoff(dict(kick, dt=dt, who="me", spawn=None, miss=True, exact=True, result=None))
+
     def _check_kickoff(self):
         """2,5 s apres le premier contact : le ballon est-il chez l'adversaire ?
         L'equipe 0 (bleue) attaque vers les Y positifs."""
-        if not (self.kick and self.kick["t"]) or time.monotonic() - self.kick["t"] < 2.5:
+        if not (self.kick and self.kick["t"]) or self.now - self.kick["t"] < 2.5:
             return
-        self.kick = None
+        kick, self.kick = self.kick, None
         team = self.my_team()
         if team is None or not self.last_ball:
             return
         y = float(self.last_ball.get("Y", 0)) * (1 if int(team) == 0 else -1)
-        self.kickoffs[0 if y > 600 else 1 if y < -600 else 2] += 1
+        result = 0 if y > 600 else 1 if y < -600 else 2
+        if self.guid:
+            self.kickoffs[result] += 1
+        if kick.get("who") and kick["dt"] < 8:
+            self.on_kickoff(dict(kick, result=("won", "lost", "neutral")[result]))
 
     def my_name(self):
         if self.store["player_name"].strip():
@@ -1236,6 +1343,10 @@ class MatchTracker:
         stats["goal_spots"] = self.goal_spots
         if sum(self.kickoffs):
             stats["kickoffs"] = list(self.kickoffs)
+        if sum(self.kick_first):
+            stats["kick_first"] = list(self.kick_first)
+            stats["kick_times"] = list(self.kick_times)
+            stats["kick_spawns"] = list(self.kick_spawns)
         n, total, zero, superso = self.boost
         if n >= 100:  # au moins ~10 s de donnees
             # "n" : enregistre depuis la correction du temps a 0 boost (avant, "zero" valait toujours 0)
@@ -1464,6 +1575,56 @@ class FloatingImage:
             self.layer.show(empty_image(), x, y)  # sur place : Tk garde la meme position que Windows
 
 
+class HudLayer:
+    """Image mise a jour en continu (guide du speed flip), que l'on deplace en la faisant glisser :
+    on_move(x, y) est appele au lacher."""
+
+    def __init__(self, root, on_move):
+        self.top = tk.Toplevel(root)
+        self.top.overrideredirect(True)
+        self.top.attributes("-topmost", True)
+        self.top.geometry("1x1+0+0")
+        self.top.configure(cursor="fleur")
+        self.layer = LayeredWindow(self.top)
+        self.pos = None
+        self.img = None
+        self.drag = None  # decalage entre la souris et le coin de l'image pendant un glisser
+        self.on_move = on_move
+        self.top.bind("<ButtonPress-1>", self._press)
+        self.top.bind("<B1-Motion>", self._motion)
+        self.top.bind("<ButtonRelease-1>", self._release)
+        self.layer.show(empty_image(), 0, 0)
+
+    def show(self, img, x, y):
+        if self.drag:  # le joueur deplace le guide : il reste sous la souris
+            x, y = self.pos
+        if self.pos != (x, y):
+            place_tk_window(self.top, img, x, y)
+            self.top.lift()
+        self.pos, self.img = (x, y), img
+        self.layer.show(img, x, y)
+
+    def _press(self, e):
+        if self.pos:
+            self.drag = (e.x_root - self.pos[0], e.y_root - self.pos[1])
+
+    def _motion(self, e):
+        if self.drag and self.img:
+            self.pos = (e.x_root - self.drag[0], e.y_root - self.drag[1])
+            place_tk_window(self.top, self.img, *self.pos)
+            self.layer.show(self.img, *self.pos)
+
+    def _release(self, e):
+        if self.drag:
+            self.drag = None
+            self.on_move(*self.pos)
+
+    def hide(self):
+        if self.pos:
+            self.layer.show(empty_image(), *self.pos)
+            self.pos = None
+
+
 class GoalLayer:
     """Animation de but en haut au milieu du jeu, sous le score (fenetre que les clics traversent)."""
 
@@ -1537,6 +1698,8 @@ class Overlay:
         self.event_kind = None
         self.settings_window = None
         self.history_window = None
+        self.training_window = None
+        self.kick_log = []  # engagements de la session (hors ligne compris) : {"t", "who", "dt", "result"...}
         self.fullscreen_window = None  # avertissement "plein ecran" ouvert
         self.fullscreen_warned = False  # deja averti pour ce passage en plein ecran
         self.hotkeys = None
@@ -1557,7 +1720,10 @@ class Overlay:
         self.restore_session()
 
         self.q = queue.Queue()
-        self.tracker = MatchTracker(self.store, self.add_result, self.on_match_start, self.on_goal)
+        self.tracker = MatchTracker(self.store, self.add_result, self.on_match_start, self.on_goal, self.on_kickoff)
+        self.pad = pad.Pad()  # manette : inputs de chaque essai du defi d'engagements
+        self.pad.start()
+        self.last_flip = None  # analyse complete (avec le trajet du stick) du dernier essai
         self.screens = Screens()
         self.sounds = Sounds(os.path.join(DATA_DIR, "sounds"))
         threading.Thread(target=self.sounds.prepare, daemon=True).start()
@@ -1581,6 +1747,8 @@ class Overlay:
         self.card = SummaryCard(self.root, lambda: self.place_met_chips())
         self.met_card = FloatingImage(self.root, self.dismiss_met)
         self.goal_layer = GoalLayer(self.root)
+        self.guide_layer = HudLayer(self.root, self.guide_moved)
+        self._guide_key = None
         self.viewport = self.compute_viewport()
         if not self.store["offsets_1440"]:
             self.migrate_offsets()
@@ -1615,6 +1783,7 @@ class Overlay:
         self.check_config()
         self.root.after(100, self.poll)
         self.root.after(300, self.check_focus)
+        self.root.after(500, self.tick_stick_guide)
         self.root.after(2000, self.keep_on_top)
         self.root.after(60000, self.check_play_time)
         self.root.after(1000, self.tick_clock)
@@ -1645,7 +1814,7 @@ class Overlay:
         self.store[key] = value
         if key == "lang":
             i18n.set_lang(value)
-            for window in (self.settings_window, self.history_window):
+            for window in (self.settings_window, self.history_window, self.training_window):
                 if window:
                     window.rebuild() if window is self.settings_window else window.build()
         elif key in ("win_color", "loss_color"):
@@ -1750,6 +1919,12 @@ class Overlay:
             self.history_window.win.lift()
         else:
             self.history_window = HistoryWindow(self)
+
+    def open_training(self):
+        if self.training_window:
+            self.training_window.win.lift()
+        else:
+            self.training_window = TrainingWindow(self)
 
     # --- Position -----------------------------------------------------------
 
@@ -2221,6 +2396,8 @@ class Overlay:
         return entries + [
             pm.sub(T("m_players"), self.menu_players, pm.I_PEOPLE),
             pm.item(T("m_history"), self.open_history, pm.I_HISTORY),
+            pm.item(T("m_training"), self.open_training, pm.I_TRAIN),
+            pm.choice(T("m_guide"), self.store["stick_guide"], self.toggle_stick_guide),
             pm.item(T("m_settings"), self.open_settings, pm.I_SETTINGS),
             pm.item(T("m_last_summary"), lambda: self.show_summary(), pm.I_SUMMARY),
             pm.item(T("m_share"), self.share_card, pm.I_COPY),
@@ -2443,6 +2620,129 @@ class Overlay:
         else:
             text = T("goal_team", name=short_name(scorer, 14)) if scorer else T("goal_us")
         self.goal_alert(ours, text)
+
+    def on_kickoff(self, kick):
+        """Engagement : premier contact (ou temps ecoule en entrainement personnalise), puis son resultat
+        2,5 s plus tard. Hors ligne, chaque engagement que je touche le premier est un essai du defi."""
+        online = bool(self.tracker.guid)
+        if kick["result"] is not None:
+            if self.kick_log and self.kick_log[-1]["result"] is None:
+                self.kick_log[-1]["result"] = kick["result"]
+        elif not online and kick["who"] == "me":
+            if kick["spawn"] or kick["miss"]:  # sinon ce n'etait pas un engagement (entrainement libre)
+                self.add_drill(kick)
+        else:
+            who, dt = kick["who"], kick["dt"]
+            self.kick_log.append({"t": time.time(), "who": who, "dt": round(dt, 2), "result": None,
+                                  "online": online, "mode": self.tracker.mode, "spawn": kick["spawn"]})
+            self.kick_log = self.kick_log[-50:]
+            if self.store["kickoff_alert"] and who != "mate" and not self.tracker.finished:
+                self.show_banner(T("kick_me" if who == "me" else "kick_opp", s=seconds_text(dt)),
+                                 designs.GREEN if who == "me" else designs.RED, None, 3)
+        if self.training_window:
+            self.training_window.refresh()
+
+    def add_drill(self, kick):
+        """Essai du defi d'engagements : enregistre, et bandeau compare a l'objectif de la position."""
+        attempt = {"t": round(time.time()), "spawn": kick["spawn"] or "", "dt": round(kick["dt"], 3),
+                   "miss": kick["miss"], "exact": kick["exact"]}
+        if self.pad.connected:
+            end = kick["go"] + kick["dt"]
+            flip = pad.analyse(self.pad.window(kick["go"] - 0.3, end), kick["go"], end, self.store["pad"])
+            if flip:
+                self.last_flip = dict(flip, t=attempt["t"])
+                attempt["flip"] = {k: v for k, v in flip.items() if k != "path"}
+        self.store["drill"] = (self.store["drill"] + [attempt])[-500:]
+        if kick["miss"]:
+            self.show_banner(T("drill_miss", s=seconds_text(kick["dt"])), designs.AMBER, None, 2.5)
+        else:
+            diff = kick["dt"] - self.store["kick_targets"][kick["spawn"]]
+            diff_text = f"{diff:+.2f}".replace(".", "," if i18n.lang() == "fr" else ".")
+            self.show_banner(T("drill_hit", spawn=T("tr_" + kick["spawn"]).upper(), s=seconds_text(kick["dt"]),
+                               d=diff_text), designs.GREEN if diff <= 0 else designs.RED, None, 2.5)
+        if attempt.get("flip") and not self.hidden:
+            img = designs.render_flip_card(flip_card_info(attempt, self.store["kick_targets"]), self.design_k())
+            self.card.show(img, *self.beside_overlay(img), 6)
+
+    def toggle_stick_guide(self):
+        """Guide du speed flip affiche ou non, quand le joueur veut (menu de l'overlay, fenetre Entrainement)."""
+        on = not self.store["stick_guide"]
+        self.set_option("stick_guide", on)
+        if on and not self.pad.connected:
+            self.show_banner(T("sg_no_pad"), designs.AMBER, None, 3)
+        else:
+            self.show_banner(T("sg_on" if on else "sg_off"), designs.SKY, None, 2)
+        if self.training_window:
+            self.training_window.show()
+
+    def tick_stick_guide(self):
+        """Guide du speed flip (30 fois par seconde) : geste conseille, stick en direct, etape en cours."""
+        self.root.after(33, self.tick_stick_guide)
+        tracker, now = self.tracker, time.perf_counter()
+        if not (self.store["stick_guide"] and self.pad.connected and not self.hidden and not self.auto_hidden):
+            if self._guide_key is not None:
+                self.guide_layer.hide()
+                self._guide_key = None
+            return
+        recent = self.pad.window(now - 0.35, now)
+        if not recent:
+            return
+        kick = tracker.kick
+        trying = bool(kick and kick["t"] is None)
+        step = 0
+        if trying:
+            flip = pad.analyse(self.pad.window(kick["go"] - 0.3, now), kick["go"], now, self.store["pad"])
+            step = 0 if flip["jump"] is None else 1 if flip["flip"] is None else 2 if flip["cancel"] is None else 3
+        last = self.last_flip if not trying else None
+        side = {"l": -1, "r": 1}.get(self.store["flip_side"])
+        if side is None:
+            angle = (self.last_flip or {}).get("angle")
+            side = 1 if angle and angle > 0 else -1
+        if last:
+            step = 4 if last.get("cancel") is not None else 2 if last.get("flip") is not None else 0
+        stick = (round(recent[-1][2], 2), round(recent[-1][3], 2))
+        trail = tuple((round(s[2], 2), round(s[3], 2)) for s in recent)
+        key = (stick, trail, step, side, id(last), i18n.lang())
+        if key == self._guide_key:
+            return
+        self._guide_key = key
+        steps = [T("sg_jump"), T("sg_flip"), T("sg_cancel"), T("sg_hold")]
+        if last and last.get("cancel") is not None:
+            steps[2] += f"  {round(last['cancel'] * 1000)} MS"
+        img = designs.render_stick_guide({
+            "title": T("sg_title"), "side": side, "stick": stick, "trail": trail, "step": step, "steps": steps,
+            "done": [(x, y) for _, x, y in last["path"]] if last else None,
+            "labels": (T("pf_flip_label"), T("pf_cancel").upper())}, self.design_k())
+        self.guide_layer.show(img, *self.guide_position(img))
+
+    def guide_moved(self, x, y):
+        """Guide du speed flip lache a la souris : position gardee, relative a l'image du jeu."""
+        vx, vy, vw, vh = self.viewport
+        self.set_option("guide_pos", [round((x - vx) / vw, 4), round((y - vy) / vh, 4)])
+        self._guide_key = None
+
+    def reset_guide_position(self):
+        self.set_option("guide_pos", [])
+        self._guide_key = None
+
+    def guide_position(self, img):
+        """La ou le joueur a pose le guide du speed flip ; sinon sur la droite du jeu, juste au-dessus de
+        l'overlay (en dessous s'il manque de place), sans le recouvrir."""
+        vx, vy, vw, vh = self.viewport
+        if len(self.store["guide_pos"]) == 2:
+            fx, fy = self.store["guide_pos"]
+            return (round(min(max(vx + fx * vw, vx), vx + vw - img.width)),
+                    round(min(max(vy + fy * vh, vy), vy + vh - img.height)))
+        margin = round(16 * self.design_k())
+        x = vx + vw - img.width - margin
+        if not self._box:
+            return x, round(vy + vh * 0.2)
+        sx, sy = self.screen_anchor()
+        top, bottom = sy + self._box[1], sy + self._box[3]
+        y = top - img.height - margin
+        if y < vy + margin:
+            y = min(bottom + margin, vy + vh - img.height - margin)
+        return round(x), round(y)
 
     def goal_alert(self, ours, text):
         """Animation en haut au milieu de l'ecran, sous le score du jeu ; sans animations,

@@ -1256,6 +1256,141 @@ def render_summary(info, k, T):
 
 
 # --------------------------------------------------------------------------
+# Carte du speed flip (defi d'engagements)
+# --------------------------------------------------------------------------
+
+def render_flip_card(info, k):
+    """Carte affichee apres un essai du defi. info = {"title", "time", "diff", "state": "ok" | "slow" | "miss",
+    "cells": [(libelle, valeur, note "ok" | "warn" | "bad" | None)], "advice"} : textes deja traduits."""
+    s = k * SS
+    BW, BH, slant = 380, 150, 14
+    pad = 18  # place pour l'ombre
+    w_px, h_px = round((BW + 2 * pad) * k), round((BH + 2 * pad) * k)
+    W, H = w_px * SS, h_px * SS
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    x0, y0, x1, y1 = pad * s, pad * s, (pad + BW) * s, (pad + BH) * s
+    shape = [(x0 + slant * s, y0), (x1, y0), (x1 - slant * s, y1), (x0, y1)]
+
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).polygon(shape, fill=(0, 0, 0, 160))
+    img.alpha_composite(_blur_cached(shadow, 8 * s))
+
+    d = ImageDraw.Draw(img)
+    color = {"ok": GREEN, "slow": RED}.get(info["state"], AMBER)
+    d.polygon(shape, fill=(11, 19, 34, 240), outline=EDGE, width=max(1, round(1.2 * s)))
+
+    # En-tete : position de depart, temps et ecart avec l'objectif
+    hh = 40 * s
+    d.polygon([(x0 + slant * s, y0), (x1, y0), (x1 - slant * s * hh / (y1 - y0), y0 + hh),
+               (x0 + slant * s * (1 - hh / (y1 - y0)), y0 + hh)], fill=_scaled(color, 0.36, 255))
+    d.polygon([(x0 + slant * s, y0), (x1, y0), (x1 - 0.5 * s, y0 + 4 * s), (x0 + (slant - 0.5) * s, y0 + 4 * s)],
+              fill=color)
+    t = text_img([(info["title"], font(round(22 * s)), FG, 0)])
+    img.alpha_composite(t, (round(x0 + 24 * s), round(y0 + hh / 2 + 2 * s - t.height / 2)))
+    parts = [(info["time"], font(round(22 * s)), FG, 0)]
+    if info.get("diff"):
+        parts.append((info["diff"], font(round(16 * s), SEMI), color, round(4 * s)))
+    t = text_img(parts)
+    img.alpha_composite(t, (round(x1 - 22 * s - t.width), round(y0 + hh / 2 + 2 * s - t.height / 2)))
+
+    # Mesures du speed flip
+    cells = info["cells"]
+    grades = {"ok": GREEN, "warn": AMBER, "bad": RED, None: FG}  # couleurs choisies par le joueur (set_colors)
+    cw = (BW - 2 * slant - 12) * s / max(1, len(cells))
+    cx = x0 + (slant + 6) * s + cw / 2
+    for label, value, note in cells:
+        paste_center(img, text_img([(value, font(round(21 * s)), grades[note], 0)]), (cx, y0 + 70 * s))
+        paste_center(img, text_img([(label, font(round(10 * s), SEMI), MUTED, 0)], shear=0), (cx, y0 + 92 * s))
+        cx += cw
+
+    # Conseil
+    d.line([(x0 + 26 * s, y0 + 110 * s), (x1 - 26 * s, y0 + 110 * s)], fill=EDGE, width=max(1, round(s)))
+    paste_center(img, text_img([(info["advice"], font(round(13 * s), SEMI), FG, 0)], shear=0),
+                 ((x0 + x1) / 2, y0 + 128 * s))
+    return finish(img, w_px, h_px)
+
+
+def _arrow(d, p0, p1, color, width, head):
+    """Fleche de p0 a p1 (pointe de taille head)."""
+    d.line([p0, p1], fill=color, width=width)
+    a = math.atan2(p1[1] - p0[1], p1[0] - p0[0])
+    left = (p1[0] - head * math.cos(a - 0.45), p1[1] - head * math.sin(a - 0.45))
+    right = (p1[0] - head * math.cos(a + 0.45), p1[1] - head * math.sin(a + 0.45))
+    d.polygon([p1, left, right], fill=color)
+
+
+def _dotted(d, p0, p1, color, width, step):
+    """Ligne en pointilles de p0 a p1."""
+    n = max(1, int(math.dist(p0, p1) / step))
+    for i in range(0, n, 2):
+        a, b = i / n, min(1, (i + 1) / n)
+        d.line([(p0[0] + (p1[0] - p0[0]) * a, p0[1] + (p1[1] - p0[1]) * a),
+                (p0[0] + (p1[0] - p0[0]) * b, p0[1] + (p1[1] - p0[1]) * b)], fill=color, width=width)
+
+
+def render_stick_guide(g, k):
+    """Guide du speed flip : geste conseille du stick gauche (haut = avant), stick en direct et etapes.
+    g = {"title", "side": -1 (flip a gauche) | 1, "stick": (x, y), "trail": [(x, y)], "done": [(x, y)] trajet
+    du dernier essai ou None, "steps": [textes], "step": etape en cours (len(steps) : terminee),
+    "labels": (texte du flip, texte du cancel)}"""
+    s = k * SS
+    BW, BH = 210, 300
+    W, H = round(BW * k) * SS, round(BH * k) * SS
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([0, 0, W - 1, H - 1], radius=12 * s, fill=(11, 19, 34, 215), outline=EDGE,
+                        width=max(1, round(1.2 * s)))
+    t = text_img([(g["title"], font(round(13 * s), SEMI), MUTED, 0)], shear=0)
+    img.alpha_composite(t, (round((W - t.width) / 2), round(10 * s)))
+
+    cx, cy, r = W / 2, 112 * s, 72 * s
+
+    def at(x, y):
+        return cx + x * r, cy - y * r
+
+    side = g["side"]
+    lo, hi = (20, 45) if side > 0 else (-45, -20)  # zone conseillee pour le flip (degres, 0 = tout droit)
+    d.pieslice([cx - r, cy - r, cx + r, cy + r], lo - 90, hi - 90, fill=(56, 189, 248, 55))
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=EDGE, width=max(1, round(2 * s)))
+    d.line([cx - r, cy, cx + r, cy], fill=(30, 42, 68, 255), width=max(1, round(s)))
+    d.line([cx, cy - r, cx, cy + r], fill=(30, 42, 68, 255), width=max(1, round(s)))
+
+    # Geste conseille : leger virage de l'autre cote, flip en diagonale (35 degres), cancel tout droit en arriere
+    a = math.radians(35 * side)
+    start, flip, cancel = at(-0.25 * side, 0), at(math.sin(a), math.cos(a)), at(0, -1)
+    _dotted(d, at(0, 0), start, SKY, round(3 * s), 6 * s)
+    _dotted(d, start, flip, SKY, round(3 * s), 6 * s)
+    _arrow(d, (flip[0] + (start[0] - flip[0]) * 0.18, flip[1] + (start[1] - flip[1]) * 0.18), flip, SKY,
+           round(3 * s), 12 * s)
+    _dotted(d, flip, cancel, GOLD, round(3 * s), 6 * s)
+    _arrow(d, (cancel[0] + (flip[0] - cancel[0]) * 0.18, cancel[1] + (flip[1] - cancel[1]) * 0.18), cancel, GOLD,
+           round(3 * s), 12 * s)
+    for (px, py), label, color in ((flip, g["labels"][0], SKY), (cancel, g["labels"][1], GOLD)):
+        t = text_img([(label, font(round(11 * s)), color, 0)], shear=0)
+        tx = px + (10 * s if px >= cx else -10 * s - t.width)
+        img.alpha_composite(t, (round(min(max(tx, 4 * s), W - t.width - 4 * s)), round(py - t.height / 2)))
+
+    # Dernier essai, puis stick en direct
+    if g.get("done") and len(g["done"]) > 1:
+        d.line([at(x, y) for x, y in g["done"]], fill=GREEN, width=round(3 * s), joint="curve")
+    trail = [at(x, y) for x, y in g.get("trail") or []]
+    if len(trail) > 1:
+        d.line(trail, fill=(241, 245, 249, 120), width=round(3 * s), joint="curve")
+    px, py = at(*g["stick"])
+    d.ellipse([px - 8 * s, py - 8 * s, px + 8 * s, py + 8 * s], fill=FG, outline=(11, 19, 34, 255),
+              width=round(2 * s))
+
+    # Etapes : faites en vert, en cours en bleu
+    y = cy + r + 16 * s
+    for i, text in enumerate(g["steps"]):
+        color = GREEN if i < g["step"] else SKY if i == g["step"] else MUTED
+        t = text_img([(f"{i + 1}. {text}", font(round(12 * s), SEMI), color, 0)], shear=0)
+        img.alpha_composite(t, (round(16 * s), round(y)))
+        y += 19 * s
+    return finish(img, round(BW * k), round(BH * k))
+
+
+# --------------------------------------------------------------------------
 # Carte de session a partager (copiee dans le presse-papiers)
 # --------------------------------------------------------------------------
 
