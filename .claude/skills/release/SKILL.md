@@ -32,10 +32,18 @@ Paragraphe facultatif qui explique le changement pour l'utilisateur.
 Les notes de la release GitHub sont generees depuis les commits : la premiere ligne doit parler a
 un joueur, pas a un developpeur.
 
+Ecrire le message dans un fichier du scratchpad et committer avec `git commit -F <fichier>` : sous
+PowerShell 5.1, un message passe avec `-m` et qui contient des guillemets est coupe en plusieurs
+arguments et le commit echoue. Verifier ensuite avec `git log -1` que le commit existe et que
+`APP_VERSION` y est bien la nouvelle version.
+
 ## 4. Confirmer, puis publier
 
 **Demander confirmation avant de pousser** : le tag publie la release pour tous les utilisateurs
 (mise a jour automatique dans l'appli, winget).
+
+Une commande a la fois, en s'arretant a la premiere erreur (jamais de `;` qui enchaine quoi qu'il
+arrive) :
 
 ```
 git push origin main
@@ -43,11 +51,16 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-La CI echoue si le tag ne correspond pas a `APP_VERSION`.
+La CI echoue si le tag ne correspond pas a `APP_VERSION` (rien n'est publie). Pour corriger un tag
+pousse sur le mauvais commit : `git push origin --delete vX.Y.Z`, `git tag -d vX.Y.Z`, puis retagger.
 
 ## 5. Apres
 
-- Suivre la CI : `gh run watch` (ou `gh run list --workflow release.yml --limit 1`).
-- Verifier la release : `gh release view vX.Y.Z` (doit contenir `RL Stats.zip` et `SHA256SUMS.txt`).
+- Suivre la CI. `gh` n'est pas connecte sur ce PC : passer par l'API publique, par exemple
+  `(Invoke-RestMethod "https://api.github.com/repos/benguedj/RL_Stats/actions/runs?per_page=3").workflow_runs`
+  (champs `head_branch`, `status`, `conclusion`, `id`). La CI dure quelques minutes.
+- Verifier la release : `Invoke-RestMethod https://api.github.com/repos/benguedj/RL_Stats/releases/tags/vX.Y.Z`
+  (`assets` doit contenir `RL Stats.zip` et `SHA256SUMS.txt`).
 - Rappeler a l'utilisateur, s'il veut mettre a jour le Microsoft Store : telecharger l'artefact
-  `rl-stats-msix` du run (`gh run download <id> -n rl-stats-msix`) et le soumettre dans Partner Center.
+  `rl-stats-msix` du run (onglet Actions sur GitHub, `https://github.com/benguedj/RL_Stats/actions/runs/<id>`)
+  et le soumettre dans Partner Center.
