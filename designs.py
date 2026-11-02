@@ -1259,11 +1259,38 @@ def render_summary(info, k, T):
 # Carte du speed flip (defi d'engagements)
 # --------------------------------------------------------------------------
 
+def _gauge(img, box, gauge, s):
+    """Jauge d'une mesure dans box (x0, y0, x1, y1) : libelle, barre (rouge, zones orange et verte), repere de la
+    valeur et valeur. gauge = (libelle, texte, position 0 a 1 ou None, zones, note) (training.flip_gauges)."""
+    d = ImageDraw.Draw(img)
+    x0, y0, x1, y1 = box
+    label, text, pos, zones, note = gauge
+    mid = (y0 + y1) / 2
+    t = text_img([(label, font(round(10 * s), SEMI), MUTED, 0)], shear=0)
+    img.alpha_composite(t, (round(x0), round(mid - t.height / 2)))
+    colors = {"ok": GREEN, "warn": AMBER, "bad": RED, None: FG}
+    t = text_img([(text, font(round(15 * s)), colors[note], 0)])
+    img.alpha_composite(t, (round(x1 - t.width), round(mid - t.height / 2)))
+    bx0, bx1 = x0 + 84 * s, x1 - 86 * s
+    h = 5 * s
+    d.rounded_rectangle([bx0, mid - h, bx1, mid + h], radius=h, fill=_scaled(RED, 0.45, 255))
+    for a, b, zone in zones:
+        d.rectangle([bx0 + a * (bx1 - bx0), mid - h, bx0 + b * (bx1 - bx0), mid + h],
+                    fill=_scaled(GREEN if zone == "ok" else AMBER, 0.75, 255))
+    if pos is not None:
+        px = bx0 + pos * (bx1 - bx0)
+        d.rectangle([px - 1.5 * s, mid - h - 5 * s, px + 1.5 * s, mid + h + 5 * s], fill=FG)
+        d.polygon([(px - 5 * s, mid - h - 9 * s), (px + 5 * s, mid - h - 9 * s), (px, mid - h - 3 * s)], fill=FG)
+
+
 def render_flip_card(info, k):
     """Carte affichee apres un essai du defi. info = {"title", "time", "diff", "state": "ok" | "slow" | "miss",
-    "cells": [(libelle, valeur, note "ok" | "warn" | "bad" | None)], "advice"} : textes deja traduits."""
+    "cells": [(libelle, valeur, note "ok" | "warn" | "bad" | None)], "gauges": jauges (_gauge), "advices":
+    [textes]} : textes deja traduits."""
     s = k * SS
-    BW, BH, slant = 380, 150, 14
+    cells, gauges = info["cells"], info.get("gauges", [])
+    BW, slant = 440, 14
+    BH = 46 + 50 * ((len(cells) + 3) // 4) + 30 * len(gauges) + 26 + 20 * len(info["advices"])
     pad = 18  # place pour l'ombre
     w_px, h_px = round((BW + 2 * pad) * k), round((BH + 2 * pad) * k)
     W, H = w_px * SS, h_px * SS
@@ -1293,20 +1320,33 @@ def render_flip_card(info, k):
     t = text_img(parts)
     img.alpha_composite(t, (round(x1 - 22 * s - t.width), round(y0 + hh / 2 + 2 * s - t.height / 2)))
 
-    # Mesures du speed flip
-    cells = info["cells"]
+    # Mesures du speed flip : 4 par ligne
     grades = {"ok": GREEN, "warn": AMBER, "bad": RED, None: FG}  # couleurs choisies par le joueur (set_colors)
-    cw = (BW - 2 * slant - 12) * s / max(1, len(cells))
-    cx = x0 + (slant + 6) * s + cw / 2
-    for label, value, note in cells:
-        paste_center(img, text_img([(value, font(round(21 * s)), grades[note], 0)]), (cx, y0 + 70 * s))
-        paste_center(img, text_img([(label, font(round(10 * s), SEMI), MUTED, 0)], shear=0), (cx, y0 + 92 * s))
-        cx += cw
+    cw = (BW - 2 * slant - 12) * s / 4
+    y = y0 + 68 * s
+    for i in range(0, len(cells), 4):
+        cx = x0 + (slant + 6) * s + cw / 2
+        for label, value, note in cells[i:i + 4]:
+            paste_center(img, text_img([(value, font(round(19 * s)), grades[note], 0)]), (cx, y))
+            paste_center(img, text_img([(label, font(round(10 * s), SEMI), MUTED, 0)], shear=0), (cx, y + 20 * s))
+            cx += cw
+        y += 50 * s
 
-    # Conseil
-    d.line([(x0 + 26 * s, y0 + 110 * s), (x1 - 26 * s, y0 + 110 * s)], fill=EDGE, width=max(1, round(s)))
-    paste_center(img, text_img([(info["advice"], font(round(13 * s), SEMI), FG, 0)], shear=0),
-                 ((x0 + x1) / 2, y0 + 128 * s))
+    # Jauges : 1er saut, angle et cancel par rapport aux zones de SpeedFlipTrainer
+    y -= 8 * s
+    for gauge in gauges:
+        _gauge(img, (x0 + 30 * s, y, x1 - 28 * s, y + 30 * s), gauge, s)
+        y += 30 * s
+    y += 8 * s
+
+    # Conseils
+    d.line([(x0 + 22 * s, y), (x1 - 22 * s, y)], fill=EDGE, width=max(1, round(s)))
+    y += 16 * s
+    for i, text in enumerate(info["advices"]):
+        t = text_img([(("› " if len(info["advices"]) > 1 else "") + text, font(round(12 * s), SEMI),
+                       FG if i == 0 else MUTED, 0)], shear=0)
+        img.alpha_composite(t, (round((x0 + x1) / 2 - t.width / 2), round(y - t.height / 2)))
+        y += 20 * s
     return finish(img, w_px, h_px)
 
 
@@ -1332,9 +1372,9 @@ def render_stick_guide(g, k):
     """Guide du speed flip : geste conseille du stick gauche (haut = avant), stick en direct et etapes.
     g = {"title", "side": -1 (flip a gauche) | 1, "stick": (x, y), "trail": [(x, y)], "done": [(x, y)] trajet
     du dernier essai ou None, "steps": [textes], "step": etape en cours (len(steps) : terminee),
-    "labels": (texte du flip, texte du cancel)}"""
+    "labels": (texte du flip, texte du cancel, texte du coup de stick)}"""
     s = k * SS
-    BW, BH = 210, 300
+    BW, BH = 210, 318
     W, H = round(BW * k) * SS, round(BH * k) * SS
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -1342,6 +1382,11 @@ def render_stick_guide(g, k):
                         width=max(1, round(1.2 * s)))
     t = text_img([(g["title"], font(round(13 * s), SEMI), MUTED, 0)], shear=0)
     img.alpha_composite(t, (round((W - t.width) / 2), round(10 * s)))
+    # Croix de fermeture en haut a droite (zone cliquable : img.info["close"])
+    cx0, cy0, size = W - 24 * s, 12 * s, 6 * s
+    for sign in (1, -1):
+        d.line([(cx0 - size, cy0 - sign * size), (cx0 + size, cy0 + sign * size)], fill=MUTED,
+               width=max(1, round(2 * s)))
 
     cx, cy, r = W / 2, 112 * s, 72 * s
 
@@ -1349,25 +1394,37 @@ def render_stick_guide(g, k):
         return cx + x * r, cy - y * r
 
     side = g["side"]
-    lo, hi = (20, 45) if side > 0 else (-45, -20)  # zone conseillee pour le flip (degres, 0 = tout droit)
+    lo, hi = (22, 38) if side > 0 else (-38, -22)  # zone verte de SpeedFlipTrainer (degres, 0 = tout droit)
     d.pieslice([cx - r, cy - r, cx + r, cy + r], lo - 90, hi - 90, fill=(56, 189, 248, 55))
     d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=EDGE, width=max(1, round(2 * s)))
     d.line([cx - r, cy, cx + r, cy], fill=(30, 42, 68, 255), width=max(1, round(s)))
     d.line([cx, cy - r, cx, cy + r], fill=(30, 42, 68, 255), width=max(1, round(s)))
 
-    # Geste conseille : leger virage de l'autre cote, flip en diagonale (35 degres), cancel tout droit en arriere
-    a = math.radians(35 * side)
-    start, flip, cancel = at(-0.25 * side, 0), at(math.sin(a), math.cos(a)), at(0, -1)
+    # Geste conseille : petit decalage vers 35 degres de l'autre cote au 1er saut, passage par le haut jusqu'a la
+    # diagonale (30 degres, flip), puis un arc le long du bord par le cote du flip jusqu'en bas (cancel)
+    def arc(a0, a1):
+        n = max(2, int(abs(a1 - a0) / 6))
+        return [at(0.94 * math.sin(math.radians(a0 + (a1 - a0) * i / n)),
+                   0.94 * math.cos(math.radians(a0 + (a1 - a0) * i / n))) for i in range(n + 1)]
+
+    a = math.radians(-35 * side)
+    tap = at(0.55 * math.sin(a), 0.55 * math.cos(a))
+    first, second = [tap] + arc(-5 * side, 30 * side), arc(30 * side, 180 * side)
+    start, flip, cancel = first[0], first[-1], second[-1]
     _dotted(d, at(0, 0), start, SKY, round(3 * s), 6 * s)
-    _dotted(d, start, flip, SKY, round(3 * s), 6 * s)
-    _arrow(d, (flip[0] + (start[0] - flip[0]) * 0.18, flip[1] + (start[1] - flip[1]) * 0.18), flip, SKY,
-           round(3 * s), 12 * s)
-    _dotted(d, flip, cancel, GOLD, round(3 * s), 6 * s)
-    _arrow(d, (cancel[0] + (flip[0] - cancel[0]) * 0.18, cancel[1] + (flip[1] - cancel[1]) * 0.18), cancel, GOLD,
-           round(3 * s), 12 * s)
+    for points, color in ((first, SKY), (second, GOLD)):
+        for p0, p1 in zip(points, points[1:]):
+            _dotted(d, p0, p1, color, round(3 * s), 6 * s)
+        _arrow(d, points[-2], points[-1], color, round(3 * s), 12 * s)
+    d.ellipse([start[0] - 5 * s, start[1] - 5 * s, start[0] + 5 * s, start[1] + 5 * s], outline=SKY,
+              width=round(2 * s))
+    t = text_img([(g["labels"][2], font(round(11 * s)), SKY, 0)], shear=0)
+    tx = start[0] + 10 * s if side < 0 else start[0] - 10 * s - t.width  # du cote ou part le decalage
+    img.alpha_composite(t, (round(min(max(tx, 4 * s), W - t.width - 4 * s)), round(start[1] - t.height / 2)))
     for (px, py), label, color in ((flip, g["labels"][0], SKY), (cancel, g["labels"][1], GOLD)):
         t = text_img([(label, font(round(11 * s)), color, 0)], shear=0)
-        tx = px + (10 * s if px >= cx else -10 * s - t.width)
+        right = px >= cx if label == g["labels"][0] else side < 0  # cancel : du cote ou l'arc n'arrive pas
+        tx = px + (10 * s if right else -10 * s - t.width)
         img.alpha_composite(t, (round(min(max(tx, 4 * s), W - t.width - 4 * s)), round(py - t.height / 2)))
 
     # Dernier essai, puis stick en direct
@@ -1387,7 +1444,9 @@ def render_stick_guide(g, k):
         t = text_img([(f"{i + 1}. {text}", font(round(12 * s), SEMI), color, 0)], shear=0)
         img.alpha_composite(t, (round(16 * s), round(y)))
         y += 19 * s
-    return finish(img, round(BW * k), round(BH * k))
+    img = finish(img, round(BW * k), round(BH * k))
+    img.info["close"] = (round((BW - 40) * k), 0, round(BW * k), round(34 * k))
+    return img
 
 
 # --------------------------------------------------------------------------

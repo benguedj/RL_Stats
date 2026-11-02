@@ -59,6 +59,7 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 | **Tray icon & taskbar button** | Click to hide / show the overlay, right-click for the menu. |
 | **Session card** | One click copies an image of your session to the clipboard, ready to paste in Discord. |
 | **Advanced stats** | Kickoffs won, average boost, time at 0 boost, supersonic time, map of where your goals go in, for a period or a single game. |
+| **Training (beta)** | Guides for kickoffs and mechanics (speed flip, half flip, wavedash, musty, flip reset...). **Fast kickoff**: in custom training (pack code `A503-264C-A7EB-D282`, copy button in the app), each attempt is timed and, with an Xbox-compatible controller, your speed flip is analyzed with the timings of the BakkesMod plugin SpeedFlipTrainer (first jump, flip angle, cancel, air roll, boost), with tips and a slow-motion replay of your stick next to the guide motion. A stick guide shows up on the overlay during kickoff training. |
 | **Tilt alert** | Suggests a break after 3 losses in a row or 2 hours of play (off by default). |
 | **Smart display** | Hides itself when the game is closed or minimized, resumes your session if restarted within 2 h, can start with Windows and stay hidden until the game starts. |
 | **Update notifications** | Tells you when a new version is available on GitHub. |
@@ -79,6 +80,7 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 - **Drag** it to move it (the position is remembered per style, and follows resolution changes).
 - **Not lined up with your boost meter?** Set *Appearance → RL interface scale* to the same value as the game's *Interface Scale* setting, or pick the *Vertical (right edge)* shape, which doesn't depend on it.
 - **Shortcuts**: `Ctrl+Shift+H` hide / show, `Ctrl+Shift+R` reset session, `Ctrl+Shift+O` open the menu (in game, the mouse cursor is hidden).
+- **Training (beta)**: menu → *Training*. The first time you take a kickoff with a controller, a small window asks which buttons you use in the game (jump, boost, air roll), so the speed flip analysis reads the right ones. Close the stick guide with its `✕`.
 - **Players in this game (Tracker)**: click a name to open their Tracker Network profile (rank, MMR).
 - If wins and losses are swapped: right-click → *Set my in-game name…*
 
@@ -138,6 +140,8 @@ build.bat
 | `history.py` | Match history (`matches.json`) and statistics |
 | `synth.py` | Built-in sounds (win, loss, goals), synthesized: no audio file shipped |
 | `ui_windows.py` | Settings and History windows (Tkinter) |
+| `training.py` | Training window (beta): guides, fast kickoff, speed flip analysis |
+| `pad.py` | Controller reading (XInput) and speed flip analysis |
 | `popup_menu.py` | Overlay menu (dark panel, keyboard navigation) |
 | `obs_server.py` | Local page for OBS (streamer mode) |
 | `i18n.py` | English / French texts |
@@ -191,6 +195,14 @@ est en plein écran, mode streamer (OBS),
 icône près de l'horloge, carte de session à coller sur Discord, stats avancées
 (engagements, boost, carte des buts, par période ou par match), alerte tilt, masquage auto quand le jeu est fermé, reprise de session,
 démarrage avec Windows, notification des mises à jour, français / anglais.
+
+**Entraînement (bêta)** : guides des engagements et des mécaniques (speed flip, half flip, wavedash, musty,
+flip reset...). **Engagement rapide** : en entraînement personnalisé (pack `A503-264C-A7EB-D282`, à copier
+depuis l'appli), chaque essai est chronométré et, avec une manette compatible Xbox, ton speed flip est
+analysé avec les repères du plugin BakkesMod SpeedFlipTrainer (1er saut, angle du flip, cancel, air roll,
+boost) : conseils, et ton geste rejoué au ralenti à côté de celui du guide. Un guide du stick s'affiche sur
+l'overlay pendant l'entraînement d'engagements (fermable avec sa croix). Au premier engagement, une petite
+fenêtre te demande tes boutons (saut, boost, air roll).
 
 **Utilisation** : bouton `☰` au survol de l'overlay, clic droit (ou sur l'icône près de l'horloge) pour le menu,
 glisser pour le déplacer, `Ctrl+Maj+H` pour le masquer, `Ctrl+Maj+R` pour réinitialiser la session,

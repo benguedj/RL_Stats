@@ -8,6 +8,7 @@ Texte des guides : "## " titre, "- " puce, "1. " etape, "> " conseil encadre, si
 """
 
 import datetime
+import math
 import tkinter as tk
 from time import perf_counter as time_now
 import urllib.parse
@@ -27,6 +28,8 @@ SPAWNS = [(-2048, -2560, "tr_diag"), (2048, -2560, "tr_diag"), (-256, -3840, "tr
           (0, -4608, "tr_back")]
 BIG_PADS = [(-3072, -4096), (3072, -4096), (-3584, 0), (3584, 0)]
 SPAWN_KEYS = ("diag", "offc", "back")  # codes du tracker (kick_spawn) ; textes : T("tr_" + code)
+KICKOFF_PACK = "A503-264C-A7EB-D282"  # pack d'entrainement personnalise d'engagements conseille
+PAD_ACTIONS = ("jump", "boost", "roll", "roll_l", "roll_r")  # boutons a assigner ; textes : T("pad_" + action)
 
 
 def diff_text(value):
@@ -42,17 +45,97 @@ def flip_cells(flip):
     def side(a):
         return T("pf_left") if a < 0 else T("pf_right")
 
+    def signed_ms(v):
+        return f"{round(v * 1000):+d} ms" if v is not None else ""
+
     flipped = flip["flip"] is not None
+    tap = "–" if flip.get("tap_side") is None else side(flip["tap_side"])
+    if flip.get("tap_side") is not None and flip["jump"] is not None:
+        tap += " " + signed_ms(flip["tap_t"] - flip["jump"])  # debut par rapport au 1er saut
+    roll = {"l": T("pf_left"), "r": T("pf_right"), "x": T("pf_yes")}.get(flip["roll"], "–")
+    if flip["roll"] and flip.get("roll_t") is not None:
+        roll += " " + signed_ms(flip["roll_t"])
     return [
-        (T("pf_jump"), seconds_text(flip["jump"]) if flip["jump"] is not None else "–", None),
+        (T("pf_tap"), tap, pad.grade_tap(flip)),
+        (T("pf_jump"), seconds_text(flip["jump"]) if flip["jump"] is not None else "–",
+         pad.grade("jump", flip["jump"])),
         (T("pf_flip"), ms(flip["flip"]), pad.grade("flip", flip["flip"])),
         (T("pf_angle"), f"{abs(flip['angle'])}° {side(flip['angle'])}" if flip["angle"] is not None else "–",
          pad.grade("angle", flip["angle"]) if flipped else None),
         (T("pf_cancel"), ms(flip["cancel"]), pad.grade("cancel", flip["cancel"]) if flipped else None),
-        (T("pf_roll"), {"l": T("pf_left"), "r": T("pf_right"), "x": T("pf_yes")}.get(flip["roll"], "–"), None),
+        (T("pf_roll"), roll, pad.grade_roll(flip)),
         (T("pf_boost"), f"{flip['boost']} %" if flip["boost"] is not None else "–",
          pad.grade("boost", flip["boost"])),
     ]
+
+
+def flip_advices(flip, n=2):
+    """Conseils les plus utiles pour ce speed flip, deja traduits."""
+    side = T(pad.roll_advice_side(flip))
+    return [T(key, side=side) for key in pad.advices(flip, n)]
+
+
+def timeline_tracks(tl):
+    """Pistes de la frise des inputs : [(libelle, "line" | "bars", donnees, couleur)] ; "line" : [(t, valeur
+    -1 a 1)] en escalier, "bars" : [(debut, fin)]. Couleurs : "sky", "gold", "green", "violet", "amber"."""
+    return [(T("tl_side"), "line", [(t, x) for t, x, _ in tl["stick"]], "sky"),
+            (T("tl_front"), "line", [(t, y) for t, _, y in tl["stick"]], "gold"),
+            (T("tl_jump"), "bars", tl["jump"], "green"),
+            (T("tl_roll"), "bars", tl["roll"], "violet"),
+            (T("tl_boost"), "bars", tl["boost"], "amber")]
+
+
+def timeline_ticks(t1):
+    """Graduations de la frise (secondes apres le depart) et leur texte."""
+    step = 0.2 if t1 <= 1.2 else 0.4
+    ticks, t = [], 0.0
+    while t <= t1 + 1e-6:
+        text = f"{t:.1f}"
+        ticks.append((t, text.replace(".", ",") if lang() == "fr" else text))
+        t += step
+    return ticks
+
+
+# Jauges de la carte (zones de SpeedFlipTrainer, voir pad.grade) : mesure, debut et fin de l'echelle, zones
+GAUGES = [("jump", 0.3, 0.75, [(50 * pad.TICK, 75 * pad.TICK, "warn"), (55 * pad.TICK, 70 * pad.TICK, "ok")]),
+          ("angle", 0, 60, [(15, 45, "warn"), (22, 38, "ok")]),
+          ("cancel", 0, 0.15, [(0, 11.5 * pad.TICK, "warn"), (0, 7.5 * pad.TICK, "ok")])]
+
+
+def flip_gauges(flip):
+    """[(libelle, valeur, position 0 a 1 ou None, zones [(debut, fin, "ok" | "warn")] en 0 a 1, note)] : les
+    trois mesures notees par SpeedFlipTrainer, sur une barre avec sa zone verte."""
+    labels = {"jump": T("pf_jump"), "angle": T("pf_angle"), "cancel": T("pf_cancel")}
+    texts = {cell[0]: cell[1] for cell in flip_cells(flip)}
+    out = []
+    for key, lo, hi, zones in GAUGES:
+        value = flip[key]
+        if key == "angle" and value is not None:
+            value = abs(value)
+        pos = None if value is None else min(1, max(0, (value - lo) / (hi - lo)))
+        out.append((labels[key].upper(), texts[labels[key]], pos,
+                    [((a - lo) / (hi - lo), (b - lo) / (hi - lo), note) for a, b, note in zones],
+                    pad.grade(key, flip[key]) if key == "jump" or flip["flip"] is not None else None))
+    return out
+
+
+def reference_flip(side):
+    """Geste conseille par le guide pour un flip du cote `side` (-1 gauche, 1 droite), sur les timings du speed
+    flip enregistre de SpeedFlipTrainer (s apres le depart) : petit decalage du stick vers 35 degres de l'autre
+    cote 25 ms avant le 1er saut (0,508 s), passage par le haut jusqu'a 30 degres au 2e saut (92 ms apres), puis
+    par le cote du flip jusqu'en bas au cancel (42 ms apres), air roll du cote du flip 33 ms apres le flip. Meme
+    forme que la frise de pad.analyse ("j1" : 1er saut)."""
+    j1, flip, cancel = 0.508, 0.6, 0.642
+
+    def edge(t, a, m=1.0):
+        return round(t, 3), round(m * math.sin(math.radians(a)), 2), round(m * math.cos(math.radians(a)), 2)
+
+    stick = [(-0.1, 0, 0), (0.45, 0, 0), edge(0.466, -35 * side, 0.3), edge(0.483, -35 * side, 0.6)]
+    stick += [edge(0.525 + (flip - 0.525) * i / 6, -35 * side + 65 * side * i / 6, 0.6 + 0.4 * i / 6)
+              for i in range(7)]
+    stick += [edge(flip + (cancel - flip) * i / 6, 30 * side + 150 * side * i / 6) for i in range(1, 7)]
+    return {"t1": 1.0, "stick": stick, "jump": [(j1, j1 + 0.042), (flip, 1.0)], "roll": [(flip + 0.033, 1.0)],
+            "boost": [(0.0, 1.0)], "j1": j1}
 
 
 def flip_card_info(attempt, targets):
@@ -62,9 +145,11 @@ def flip_card_info(attempt, targets):
     else:
         gap = attempt["dt"] - targets[attempt["spawn"]]
         title, state, diff = T("tr_" + attempt["spawn"]).upper(), "ok" if gap <= 0 else "slow", diff_text(gap)
+    cells = flip_cells(attempt["flip"])
     return {"title": title, "time": seconds_text(attempt["dt"]), "diff": diff, "state": state,
-            "cells": [(label.upper(), value, note) for label, value, note in flip_cells(attempt["flip"])],
-            "advice": T(pad.advice(attempt["flip"]))}
+            # Coup de stick, delai du flip, air roll, boost : le saut, l'angle et le cancel sont en jauges
+            "cells": [(label.upper(), value, note) for label, value, note in (cells[i] for i in (0, 2, 5, 6))],
+            "gauges": flip_gauges(attempt["flip"]), "advices": flip_advices(attempt["flip"])}
 
 
 def seconds_text(value):
@@ -106,31 +191,43 @@ The furthest from the ball. In 1v1, this is where the opponent often gets there 
      "body": ("""Le flip le plus rapide du jeu : la voiture part en diagonale mais ne bascule pas, elle garde sa vitesse. C'est l'engagement des bons joueurs, et il sert aussi pour arriver vite sur un ballon au sol.
 ## Avant de commencer
 - Assigne l'air roll gauche et l'air roll droite à des touches (Paramètres > Commandes). Ce sera aussi utile pour le half flip et les aériens.
-## Les étapes
-1. Accélère et boost dès le GO. Garde le boost jusqu'au contact.
-2. Tourne très légèrement d'un côté, un court instant, pour que la voiture parte de biais.
-3. Saute, puis flip en diagonale avant vers l'autre côté (environ 45°).
-4. Juste après le début du flip, tire le stick vers l'arrière pour annuler la rotation : c'est le flip cancel.
-5. En même temps, maintiens l'air roll qui garde la voiture à plat. Un seul côté marche avec ton côté de flip : teste les deux.
+## Les étapes (exemple : flip vers la gauche)
+Timings du plugin BakkesMod SpeedFlipTrainer et de son speed flip enregistré : le jeu calcule à 120 ticks par seconde.
+1. Accélère et boost dès le départ. Garde le boost jusqu'au contact.
+2. Vers 0,5 s (entre 0,46 et 0,58 s après le départ), décale légèrement le stick en haut à droite, vers 35° de la verticale (« 1 h »), sans aller à fond : juste un petit décalage, pour tourner à peine. Saute dans la foulée : le stick doit encore être décalé au moment du saut. Appui court sur le saut.
+3. Sans relâcher le stick, fais-le passer par le haut jusqu'en haut à gauche : environ 30° de la verticale (entre 22 et 38°), vers « 11 h ». Deuxième saut à ce moment, environ 90 ms après le premier.
+4. Continue le même mouvement le long du bord : vers la gauche, puis tout en bas. C'est le flip cancel : stick tiré à fond vers l'arrière moins de 60 ms après le flip (le plugin tolère jusqu'à 90 ms). Garde-le en bas jusqu'à l'atterrissage.
+5. Juste après le flip (environ 30 ms), appuie sur l'air roll gauche, du même côté que le flip, et garde-le jusqu'à l'atterrissage.
 6. Atterris sur les roues, toujours en boost, puis flip avant dans le ballon à environ une longueur de voiture.
-> Si la voiture fait un tour complet, tu annules trop tard. Si elle retombe sur le côté ou sur le toit, change d'air roll.
-## S'entraîner
-- Entraînement libre : travaille d'abord le flip cancel seul, en ligne droite, sans ballon.
+> Le stick fait donc un seul geste : petit décalage vers « 1 h », « 11 h », gauche, bas, sans repasser au centre. Un virage trop fort au départ fait partir la voiture de travers et passer à côté du ballon. Pour un flip à droite, inverse tout : décalage vers « 11 h », flip vers « 1 h », puis vers le bas par la droite, air roll droite.
+## S'entraîner pas à pas
+Si tu ne touches jamais le ballon, n'enchaîne pas tout d'un coup : ajoute un geste à la fois, et passe au suivant quand le précédent marche presque à chaque fois.
+1. Entraînement libre, sans ballon, en ligne droite : saut, flip en diagonale et cancel en un seul arc de stick. La voiture doit rester presque à plat.
+2. Ajoute l'air roll, jusqu'à atterrir sur les roues à chaque fois.
+3. Ajoute le petit décalage du stick vers « 1 h » au moment du premier saut, puis le boost.
+4. Seulement ensuite, l'engagement : pack d'entraînement personnalisé sans limite de temps, pour finir chaque essai jusqu'au ballon.
+- Le guide du speed flip sur l'overlay (clic droit sur l'overlay) montre ton stick en direct à côté du geste conseillé.
 - Match d'exhibition contre des bots ou match privé : chaque but relance un engagement, et l'app te donne ton temps dans « Tes engagements ».
 - Le plugin BakkesMod « SpeedFlipTrainer » (hors ligne, sans lien avec RL Stats) analyse chaque tentative.""",
               """The fastest flip in the game: the car goes diagonally but does not tip over, so it keeps its speed. It is how good players take kickoffs, and it also helps you reach a ball on the ground quickly.
 ## Before you start
 - Bind air roll left and air roll right (Settings > Controls). You will also need them for the half flip and aerials.
-## Steps
-1. Throttle and boost from GO. Keep boosting until you touch the ball.
-2. Steer very slightly to one side for a moment, so the car goes a bit sideways.
-3. Jump, then flip diagonally forward toward the other side (about 45°).
-4. Right after the flip starts, pull the stick back to stop the rotation: the flip cancel.
-5. At the same time, hold the air roll that keeps the car flat. Only one side works with your flip side: try both.
+## Steps (example: flip to the left)
+Timings from the BakkesMod plugin SpeedFlipTrainer and its recorded speed flip: the game runs at 120 ticks per second.
+1. Throttle and boost from the start. Keep boosting until you touch the ball.
+2. At about 0.5 s (between 0.46 and 0.58 s after the start), shift the stick slightly up-right, about 35° from vertical ("1 o'clock"), not all the way: just a small offset, to barely turn. Jump right away: the stick must still be offset when you jump. Short press on jump.
+3. Without letting go, move it over the top to the top left: about 30° from vertical (22 to 38°), toward "11 o'clock". Second jump at that moment, about 90 ms after the first one.
+4. Keep the same motion along the edge: to the left, then all the way down. That is the flip cancel: stick fully back less than 60 ms after the flip (the plugin accepts up to 90 ms). Keep it down until you land.
+5. Right after the flip (about 30 ms), press air roll left, on the same side as the flip, and hold it until you land.
 6. Land on your wheels, still boosting, then front flip into the ball about one car length away.
-> If the car does a full rotation, you cancel too late. If it lands on its side or roof, switch air roll.
-## Practice
-- Free play: first practice the flip cancel on its own, in a straight line, without the ball.
+> So the stick makes one single motion: small offset toward "1 o'clock", "11 o'clock", left, down, without going back through the center. Turning too much at the start sends the car sideways past the ball. To flip right, mirror everything: offset toward "11 o'clock", flip toward "1 o'clock", then down through the right, air roll right.
+## Practice step by step
+If you never reach the ball, don't chain everything at once: add one move at a time, and move on when the previous one works almost every time.
+1. Free play, no ball, in a straight line: jump, diagonal flip and cancel in one single stick arc. The car should stay almost flat.
+2. Add air roll, until you land on your wheels every time.
+3. Add the small stick offset toward "1 o'clock" as you do the first jump, then boost.
+4. Only then, the kickoff: a custom training pack without a time limit, so every attempt goes all the way to the ball.
+- The speed flip guide on the overlay (right-click the overlay) shows your live stick next to the recommended motion.
 - Exhibition against bots or private match: every goal restarts a kickoff, and the app gives you your time in "Your kickoffs".
 - The BakkesMod plugin "SpeedFlipTrainer" (offline, unrelated to RL Stats) analyzes every attempt.""")},
 
@@ -348,25 +445,153 @@ DRILL_HELP = ("""## Comment s'entraîner
 3. Après chaque tir, l'overlay affiche ton temps et l'écart avec l'objectif : vert si tu es dessous, rouge sinon.
 - Ça marche aussi en match privé ou d'exhibition contre des bots : le chrono part alors au GO.
 > Les packs avec une limite de temps (2 s pour celui de Musty) arrêtent le tir avant le contact s'il est trop lent : l'app le compte comme « pas touché ».
-- Les objectifs par défaut sont des estimations pour un engagement rapide avec speed flip. Règle-les sur ton niveau, puis baisse-les petit à petit.""",
+- Les objectifs par défaut sont des estimations pour un engagement rapide avec speed flip. Règle-les sur ton niveau, puis baisse-les petit à petit.
+## Lire la frise de tes inputs
+Sous ton dernier speed flip (et sur la carte de l'overlay), chaque ligne montre un input dans le temps, du départ au cancel. Un bon speed flip vers la gauche ressemble à ça, de gauche à droite :
+1. Boost : la barre orange commence à 0 et ne s'arrête plus.
+2. Stick G / D : monte un peu (petit décalage à droite) juste avant le premier saut, sans aller tout en haut, puis redescend en passant par le centre.
+3. Saut : un premier appui court vers 0,5 s, puis le deuxième environ 90 ms après (trait FLIP).
+4. Au trait FLIP, le stick G / D descend vers la gauche et le stick av. / arr. monte : c'est le flip en diagonale.
+5. Moins de 60 ms après (trait CANCEL), le stick av. / arr. arrive tout en bas et y reste, pendant que le stick G / D passe par la gauche.
+6. Air roll (gauche, côté du flip) : la barre violette commence environ 30 ms après le trait FLIP et dure jusqu'à l'atterrissage.
+> Compare ta frise à cette liste : le premier point qui ne colle pas est celui à travailler. Les conseils sous les mesures le disent aussi, du plus important au moins important.""",
               """## How to practice
 1. Training > Custom training: load a kickoff pack (car on the real kickoff spawns, ball in the center).
 2. The timer starts on your first movement and stops when you touch the ball. The app recognizes your spawn from the distance your car traveled.
 3. After each shot, the overlay shows your time and the gap to your target: green when you beat it, red otherwise.
 - It also works in private matches or exhibitions against bots: the timer then starts at GO.
 > Packs with a time limit (2 s in Musty's pack) end the shot before contact if you are too slow: the app counts it as "missed".
-- The default targets are estimates for a fast speed flip kickoff. Set them to your level, then lower them bit by bit.""")
+- The default targets are estimates for a fast speed flip kickoff. Set them to your level, then lower them bit by bit.
+## Reading your input timeline
+Under your latest speed flip (and on the overlay card), each line shows one input over time, from the start to the cancel. A good speed flip to the left looks like this, from left to right:
+1. Boost: the orange bar starts at 0 and never stops.
+2. Stick L / R: goes up a little (small offset to the right) just before the first jump, not all the way, then comes down through the center.
+3. Jump: a short first press at about 0.5 s, then the second one about 90 ms later (FLIP line).
+4. At the FLIP line, stick L / R drops to the left and stick fwd / back goes up: that is the diagonal flip.
+5. Less than 60 ms later (CANCEL line), stick fwd / back reaches the bottom and stays there, while stick L / R goes through the left.
+6. Air roll (left, the flip side): the purple bar starts about 30 ms after the FLIP line and lasts until you land.
+> Compare your timeline to this list: the first point that does not match is the one to work on. The tips under the measures say it too, most important first.""")
 
 
 # --------------------------------------------------------------------------
 # Fenetre
 # --------------------------------------------------------------------------
 
+class PadSetup:
+    """Fenetre "Indique tes boutons" : demande les boutons de la manette un par un. S'ouvre toute seule au
+    premier essai d'engagement si le joueur ne les a jamais indiques (quiet : sans prendre le focus du jeu, la
+    manette est lue quand meme), ou depuis la page Defi engagements."""
+
+    WAIT = 8  # secondes pour appuyer sur chaque bouton
+
+    def __init__(self, app, quiet=False):
+        self.app = app
+        self.found = dict(app.store["pad"])
+        self.i = 0
+        self.win = tk.Toplevel(app.root)
+        self.win.withdraw()
+        self.win.overrideredirect(True)
+        self.win.attributes("-topmost", True)
+        self.win.configure(bg=WARN)
+        body = tk.Frame(self.win, bg=PANEL)
+        body.pack(fill="both", expand=True, padx=2, pady=2)
+        tk.Label(body, text=T("pad_setup_title"), bg=PANEL, fg=WARN, font=TITLE_FONT, anchor="w").pack(
+            fill="x", padx=18, pady=(14, 4))
+        tk.Label(body, text=T("pad_setup_text"), bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w",
+                 justify="left", wraplength=440).pack(fill="x", padx=18)
+        self.step = tk.Label(body, bg=PANEL, fg=FG, font=("Bahnschrift SemiBold", 17))
+        self.step.pack(pady=(14, 2))
+        tk.Label(body, text=T("pad_setup_skip"), bg=PANEL, fg=MUTED, font=("Segoe UI", 9),
+                 wraplength=440).pack(padx=18)
+        grid = tk.Frame(body, bg=PANEL)
+        grid.pack(pady=(10, 4))
+        self.cells = {}
+        for i, action in enumerate(PAD_ACTIONS):
+            row, col = divmod(i, 2)
+            name = tk.Label(grid, text=T("pad_" + action), bg=PANEL, fg=MUTED, font=BODY_FONT, width=15, anchor="w")
+            name.grid(row=row, column=2 * col, sticky="w", padx=(10, 0), pady=1)
+            value = tk.Label(grid, bg=PANEL, fg=FG, font=("Bahnschrift SemiBold", 11), width=5, anchor="w")
+            value.grid(row=row, column=2 * col + 1, sticky="w")
+            self.cells[action] = (name, value)
+        buttons = tk.Frame(body, bg=PANEL)
+        buttons.pack(fill="x", padx=18, pady=(8, 14))
+        _button(buttons, T("pad_setup_later"), self.close, bg=EDGE).pack(side="right")
+        _button(buttons, T("pad_setup_keep"), self.keep, bg=BG).pack(side="right", padx=(0, 8))
+        self._show(quiet)
+        self.next()
+
+    def _show(self, quiet):
+        """En haut du jeu, centree. quiet : affichee sans devenir la fenetre active (le jeu garde le focus)."""
+        self.win.update_idletasks()
+        w, h = 480, self.win.winfo_reqheight()
+        vx, vy, vw, vh = self.app.viewport
+        self.win.geometry(f"{w}x{h}+{vx + (vw - w) // 2}+{vy + vh // 6}")
+        if quiet:
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                hwnd = user32.GetParent(self.win.winfo_id()) or self.win.winfo_id()
+                user32.SetWindowLongW(hwnd, -20, user32.GetWindowLongW(hwnd, -20) | 0x08000000)  # WS_EX_NOACTIVATE
+                user32.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE
+                return
+            except (AttributeError, OSError):
+                pass
+        self.win.deiconify()
+
+    def next(self):
+        """Bouton suivant a demander, ou fin."""
+        for i, action in enumerate(PAD_ACTIONS):
+            name, value = self.cells[action]
+            name.configure(fg=WARN if i == self.i else MUTED)
+            value.configure(text=self.found.get(action) or "–", fg=WARN if i == self.i else FG)
+        if self.i >= len(PAD_ACTIONS):
+            self.app.set_option("pad", self.found)
+            self.app.set_option("pad_checked", True)
+            self.step.configure(text=T("pad_setup_done"), fg=OK)
+            if self.app.training_window:
+                self.app.training_window.show()
+            self.win.after(1500, self.close)
+            return
+        self.step.configure(text=T("pad_setup_step", i=self.i + 1, n=len(PAD_ACTIONS),
+                                   action=T("pad_" + PAD_ACTIONS[self.i])))
+        self.deadline = time_now() + self.WAIT
+        self.before = self.app.pad.held()  # un bouton deja enfonce ne compte pas : il faut un nouvel appui
+        self.win.after(30, self.poll)
+
+    def poll(self):
+        if not self.win.winfo_exists():
+            return
+        held = self.app.pad.held()
+        new = held - self.before
+        if new:
+            pressed = sorted(new)[0]
+            self.found[PAD_ACTIONS[self.i]] = "" if pressed == "Back" else pressed
+        if new or time_now() > self.deadline:
+            self.i += 1
+            self.next()
+            return
+        self.before &= held
+        self.win.after(30, self.poll)
+
+    def keep(self):
+        self.app.set_option("pad_checked", True)
+        if self.app.training_window:
+            self.app.training_window.show()
+        self.close()
+
+    def close(self):
+        self.app.pad_popup = None
+        if self.win.winfo_exists():
+            self.win.destroy()
+
+
 class TrainingWindow:
     def __init__(self, app):
         self.app = app
-        self.page = "kick_stats"
+        self.page = "kick_drill"
         self.capturing = None  # action dont on attend le bouton (assignation de la manette)
+        self.replay_speed = 0.25  # vitesse de l'animation du stick (dernier essai et reference)
+        self.replay_gen = 0  # animation en cours : les anciennes s'arretent quand la page est reconstruite
         self.win = _dark_window(app.root, T("tr_title"), (940, 680), app.viewport)
         self.win.minsize(780, 520)
         self.win.protocol("WM_DELETE_WINDOW", self.close)
@@ -377,8 +602,8 @@ class TrainingWindow:
         self.win.destroy()
 
     def refresh(self):
-        """Appele a chaque engagement : seules les pages des chronos changent."""
-        if self.page in ("kick_stats", "kick_drill"):
+        """Appele a chaque engagement : seule la page Engagement rapide change."""
+        if self.page == "kick_drill":
             top = self.canvas.yview()[0]
             self.show()
             self.canvas.yview_moveto(top)
@@ -433,9 +658,7 @@ class TrainingWindow:
         self.content.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self.wrapped = []
         self.vars = []  # variables des cases a cocher : Tk les oublie si plus rien ne les reference
-        if self.page == "kick_stats":
-            self.show_stats()
-        elif self.page == "kick_drill":
+        if self.page == "kick_drill":
             self.show_drill()
         else:
             self.show_guide(next(g for g in GUIDES if g["key"] == self.page))
@@ -450,11 +673,12 @@ class TrainingWindow:
         for child in self.nav.winfo_children():
             child.destroy()
         status = self.app.store["training"]
+        tk.Label(self.nav, text=T("tr_beta"), bg=BG, fg=WARN, font=("Segoe UI", 9), anchor="w", justify="left",
+                 wraplength=210).pack(fill="x", pady=(0, 12))
         for group, title in (("kick", T("tr_kickoffs")), ("mech", T("tr_mechanics"))):
             tk.Label(self.nav, text=title.upper(), bg=BG, fg=MUTED, font=("Bahnschrift SemiBold", 10),
                      anchor="w").pack(fill="x", pady=(0 if group == "kick" else 14, 4))
-            entries = [("kick_stats", T("tr_stats"), None), ("kick_drill", T("dr_title"), None)] \
-                if group == "kick" else []
+            entries = [("kick_drill", T("dr_title"), None)] if group == "kick" else []
             entries += [(g["key"], self.text(g["title"]), status.get(g["key"], 0) if g.get("skill") else None)
                         for g in GUIDES if g["group"] == group]
             for key, label, state in entries:
@@ -610,53 +834,6 @@ class TrainingWindow:
         c.create_oval(cx - 11, my - 11, cx + 11, my + 11, fill=FG, outline=MUTED)
         c.create_text(cx + 18, my - 12, text=T("tr_ball"), fill=MUTED, anchor="w", font=("Segoe UI", 8))
 
-    # --- Tes engagements ----------------------------------------------------
-
-    def show_stats(self):
-        self._title(T("tr_stats"))
-        tk.Label(self.content, text=T("tr_period"), bg=BG, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(fill="x")
-        mes = [m.get("me") or {} for m in self.app.history.filter("30d", None)]
-        first = [sum(me.get("kick_first", [0, 0, 0])[i] for me in mes) for i in range(3)]
-        times = [t for me in mes for t in me.get("kick_times", [])]
-        kick = [sum(me.get("kickoffs", [0, 0, 0])[i] for me in mes) for i in range(3)]
-        touched, decided = sum(first), kick[0] + kick[1]
-        self._tiles([
-            (T("tr_first"), f"{round(first[0] * 100 / touched)} %" if touched else "–",
-             T("tr_first_sub", me=first[0], n=touched)),
-            (T("tr_avg"), seconds_text(sum(times) / len(times)) if times else "–", T("tr_avg_sub")),
-            (T("tr_best"), seconds_text(min(times)) if times else "–", T("tr_avg_sub")),
-            (T("h_kickoffs"), f"{round(kick[0] * 100 / decided)} %" if decided else "–",
-             T("h_kickoffs_sub", w=kick[0], l=kick[1], n=kick[2])),
-        ])
-
-        box = tk.Frame(self.content, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
-        box.pack(fill="x", pady=(12, 0))
-        var = tk.BooleanVar(value=self.app.store["kickoff_alert"])
-        self.vars.append(var)
-        tk.Checkbutton(box, text=T("tr_alert"), variable=var, bg=PANEL, fg=FG, font=BODY_FONT, selectcolor=BG,
-                       activebackground=PANEL, activeforeground=FG, anchor="w", highlightthickness=0, bd=0,
-                       command=lambda: self.app.set_option("kickoff_alert", var.get())).pack(
-            fill="x", padx=12, pady=(10, 2))
-        self._label(box, T("tr_how"), fg=MUTED, font=("Segoe UI", 9), bg=PANEL, margin=70, padx=12, pady=(0, 10))
-
-        tk.Label(self.content, text=T("tr_session"), bg=BG, fg=FG, font=TITLE_FONT, anchor="w").pack(
-            fill="x", pady=(16, 4))
-        log = list(reversed(self.app.kick_log))[:15]
-        if not log:
-            self._label(self.content, T("tr_no_kick"), fg=MUTED)
-            return
-        win_c, loss_c = self.app.store["win_color"], self.app.store["loss_color"]
-        who_colors = {"me": win_c, "opp": loss_c, "mate": FG}
-        result_colors = {"won": win_c, "lost": loss_c}
-        self._table(("tr_col_time", "tr_col_game", "tr_col_first", "dr_col_spawn", "tr_col_dt", "tr_col_result"), [[
-            (datetime.datetime.fromtimestamp(k["t"]).strftime("%H:%M"), MUTED),
-            (T("tr_online", mode=k["mode"] or "") if k["online"] else T("tr_offline"), MUTED),
-            (T("tr_" + k["who"]), who_colors[k["who"]]),
-            (T("tr_" + k["spawn"]) if k.get("spawn") else "–", MUTED),
-            (seconds_text(k["dt"]), FG),
-            (T("tr_" + k["result"]) if k["result"] else "–", result_colors.get(k["result"], MUTED)),
-        ] for k in log])
-
     def _table(self, heads, rows):
         """Tableau [(texte, couleur)] par ligne, avec une ligne de titres."""
         table = tk.Frame(self.content, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
@@ -670,11 +847,14 @@ class TrainingWindow:
                 tk.Label(table, text=text, bg=PANEL, fg=color, font=BODY_FONT, anchor="w").grid(
                     row=row, column=col, sticky="we", padx=10, pady=2 if row < len(rows) else (2, 8))
 
-    # --- Defi engagements ---------------------------------------------------
+    # --- Engagement rapide --------------------------------------------------
 
     def show_drill(self):
         self._title(T("dr_title"))
         self._label(self.content, T("dr_intro"), fg=MUTED, pady=(2, 0))
+        self._pack_code()
+        if self.app.pad.connected and not self.app.pad_ready():
+            self._pad_setup()
         targets, drill = self.app.store["kick_targets"], self.app.store["drill"]
         tiles = []
         for spawn in SPAWN_KEYS:
@@ -706,6 +886,7 @@ class TrainingWindow:
 
         self._last_flip(drill)
         self._pad_box()
+        self._match_timer()
         self._markup(self.text(DRILL_HELP))
 
         head = tk.Frame(self.content, bg=BG)
@@ -723,7 +904,7 @@ class TrainingWindow:
             when = datetime.datetime.fromtimestamp(a["t"]).strftime("%H:%M")
             time_text = ("" if a.get("exact", True) else "≈ ") + seconds_text(a["dt"])
             grade_colors = {"ok": win_c, "warn": WARN, "bad": loss_c, None: FG}
-            flip = [(value, grade_colors[note]) for _, value, note in flip_cells(a["flip"])][2:4] \
+            flip = [(value, grade_colors[note]) for _, value, note in flip_cells(a["flip"])][3:5] \
                 if a.get("flip") else [("–", MUTED)] * 2
             if a["miss"]:
                 rows.append([(when, MUTED), ("–", MUTED), (time_text, FG), ("–", MUTED)] + flip
@@ -757,13 +938,16 @@ class TrainingWindow:
         cells.pack(fill="x")
         win_c, loss_c = self.app.store["win_color"], self.app.store["loss_color"]
         colors = {"ok": win_c, "warn": WARN, "bad": loss_c, None: FG}
-        for col, (label, value, note) in enumerate(flip_cells(last)):
+        for i, (label, value, note) in enumerate(flip_cells(last)):
+            row, col = divmod(i, 4)
             cells.grid_columnconfigure(col, weight=1, uniform="flip")
             tk.Label(cells, text=value, bg=PANEL, fg=colors[note], font=("Bahnschrift SemiBold", 15)).grid(
-                row=0, column=col, sticky="w")
-            tk.Label(cells, text=label, bg=PANEL, fg=MUTED, font=("Segoe UI", 9)).grid(row=1, column=col, sticky="w")
-        self._label(right, T(pad.advice(last)), bg=PANEL, font=("Bahnschrift SemiBold", 11), margin=260,
-                    pady=(12, 4))
+                row=2 * row, column=col, sticky="w", pady=(6 if row else 0, 0))
+            tk.Label(cells, text=label, bg=PANEL, fg=MUTED, font=("Segoe UI", 9)).grid(row=2 * row + 1, column=col,
+                                                                                    sticky="w")
+        for i, text in enumerate(flip_advices(last)):
+            self._label(right, text, bg=PANEL, fg=FG if i == 0 else MUTED, font=("Bahnschrift SemiBold", 11),
+                        margin=260, pady=(12 if i == 0 else 0, 2))
         best = sorted((a for a in drill if a.get("flip") and not a["miss"] and a["flip"]["flip"] is not None),
                       key=lambda a: a["dt"] - self.app.store["kick_targets"][a["spawn"]])[:5]
         if best:
@@ -776,6 +960,144 @@ class TrainingWindow:
                                  j=seconds_text(jump) if jump is not None else "–"),
                         fg=MUTED, bg=PANEL, font=("Segoe UI", 9), margin=260)
         self._label(right, T("pf_note"), fg=MUTED, bg=PANEL, font=("Segoe UI", 9), margin=260, pady=(4, 0))
+        if last.get("tl"):
+            self._replay(last)
+            tk.Label(self.content, text=T("tl_title"), bg=BG, fg=MUTED, font=BODY_FONT, anchor="w").pack(
+                fill="x", pady=(10, 2))
+            frise = tk.Canvas(self.content, bg=PANEL, highlightbackground=EDGE, highlightthickness=1, height=170)
+            frise.pack(fill="x")
+            frise.bind("<Configure>", lambda e: self._draw_timeline(frise, last["tl"]))
+
+    def _replay(self, last):
+        """Ton dernier geste et celui de reference, rejoues en boucle au ralenti, cales sur le 1er saut."""
+        side = 1 if (last.get("angle") or -1) > 0 else -1
+        ref = reference_flip(side)
+        mine_j1 = last["jump"] if last["jump"] is not None else ref["j1"]
+        head = tk.Frame(self.content, bg=BG)
+        head.pack(fill="x", pady=(10, 2))
+        tk.Label(head, text=T("rp_title"), bg=BG, fg=MUTED, font=BODY_FONT).pack(side="left")
+        for speed in (1.0, 0.5, 0.25):
+            active = self.replay_speed == speed
+            text = "×" + (f"{speed:g}".replace(".", ",") if lang() == "fr" else f"{speed:g}")
+            tk.Button(head, text=text, command=lambda v=speed: self.set_replay_speed(v), relief="flat",
+                      cursor="hand2", bg=EDGE if active else BG, fg=FG if active else MUTED, activebackground=EDGE,
+                      activeforeground=FG, font=("Bahnschrift SemiBold", 10), padx=8, pady=1, bd=0).pack(
+                side="right", padx=(2, 0))
+        tk.Label(head, text=T("rp_speed"), bg=BG, fg=MUTED, font=BODY_FONT).pack(side="right", padx=(0, 6))
+        box = tk.Frame(self.content, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
+        box.pack(fill="x")
+        row = tk.Frame(box, bg=PANEL)
+        row.pack(pady=(10, 0))
+        views = []
+        for title, data, j1 in ((T("rp_you"), last["tl"], mine_j1), (T("rp_ref"), ref, ref["j1"])):
+            col = tk.Frame(row, bg=PANEL)
+            col.pack(side="left", padx=28)
+            tk.Label(col, text=title, bg=PANEL, fg=FG, font=("Bahnschrift SemiBold", 11)).pack()
+            c = tk.Canvas(col, bg=PANEL, highlightthickness=0, width=200, height=236)
+            c.pack()
+            views.append((c, data, j1))
+        clock = tk.Label(box, bg=PANEL, fg=FG, font=("Bahnschrift SemiBold", 11))
+        clock.pack()
+        self._label(box, T("rp_hint"), fg=MUTED, bg=PANEL, font=("Segoe UI", 9), margin=70, padx=12, pady=(2, 10))
+        self.replay_gen += 1
+        self._replay_step(self.replay_gen, views, clock, side, -0.35)
+
+    def set_replay_speed(self, speed):
+        self.replay_speed = speed
+        self.show()
+
+    def _replay_step(self, gen, views, clock, side, rel):
+        """Une image de l'animation : `rel` secondes apres le 1er saut (de -0,35 a +0,45 s, puis on recommence)."""
+        if gen != self.replay_gen or not clock.winfo_exists():
+            return
+        for c, data, j1 in views:
+            self._draw_replay(c, data, j1, j1 + rel, side)
+        clock.configure(text=T("rp_clock", t=f"{round(rel * 1000):+d} ms"))
+        if rel >= 0.45:
+            nxt, delay = -0.35, 900
+        else:
+            nxt, delay = min(0.45, rel + 0.033 * self.replay_speed), 33
+        self.win.after(delay, lambda: self._replay_step(gen, views, clock, side, nxt))
+
+    def _draw_replay(self, c, data, j1, t, side):
+        """Stick a l'instant t (s apres le depart) : zone verte du flip, trajet complet en fond, trajet deja fait,
+        position du stick, puis saut / air roll / boost allumes s'ils sont enfonces."""
+        c.delete("all")
+        cx, cy, r = 100, 92, 78
+        win_c = self.app.store["win_color"]
+        lo, hi = (22, 38) if side > 0 else (-38, -22)
+        c.create_arc(cx - r, cy - r, cx + r, cy + r, start=90 - hi, extent=hi - lo, fill=GRID, outline="")
+        c.create_oval(cx - r, cy - r, cx + r, cy + r, outline=EDGE, width=2)
+        c.create_line(cx - r, cy, cx + r, cy, fill=EDGE)
+        c.create_line(cx, cy - r, cx, cy + r, fill=EDGE)
+        c.create_text(cx, cy - r - 7, text="▲", fill=MUTED, font=("Segoe UI", 7))
+        span = [s for s in data["stick"] if j1 - 0.35 <= s[0] <= j1 + 0.45]
+        before = [s for s in data["stick"] if s[0] < j1 - 0.35]
+        if before:
+            span.insert(0, (j1 - 0.35,) + tuple(before[-1][1:]))
+
+        def at(x, y):
+            return cx + x * r, cy - y * r
+
+        if len(span) > 1:
+            c.create_line(*[v for s in span for v in at(s[1], s[2])], fill=EDGE, width=2)
+        done = [s for s in span if s[0] <= t]
+        if len(done) > 1:
+            c.create_line(*[v for s in done for v in at(s[1], s[2])], fill="#38bdf8", width=3)
+        now = done[-1] if done else (span[0] if span else (t, 0, 0))
+        px, py = at(now[1], now[2])
+        c.create_oval(px - 9, py - 9, px + 9, py + 9, fill=FG, outline=BG, width=2)
+        x = 8
+        for key, color in (("jump", win_c), ("roll", "#a78bfa"), ("boost", "#f59e0b")):
+            on = any(a <= t <= b for a, b in data[key])
+            c.create_rectangle(x, 200, x + 58, 224, fill=color if on else BG, outline=color if on else EDGE)
+            c.create_text(x + 29, 212, text=T("tl_" + key), fill=BG if on else MUTED,
+                          font=("Bahnschrift SemiBold", 9))
+            x += 64
+
+    def _draw_timeline(self, c, tl):
+        """Frise des inputs du dernier essai (meme contenu que sur la carte de l'overlay)."""
+        c.delete("all")
+        colors = {"sky": "#38bdf8", "gold": "#facc15", "green": self.app.store["win_color"], "violet": "#a78bfa",
+                  "amber": "#f59e0b"}
+        tracks = timeline_tracks(tl)
+        x0, y0, x1, y1 = 12, 22, int(c.winfo_width()) - 16, int(c["height"]) - 22
+        left, t0, t1 = x0 + 120, -0.1, tl["t1"]
+        weights = [2 if kind == "line" else 1 for _, kind, _, _ in tracks]
+        unit = (y1 - y0) / sum(weights)
+
+        def tx(t):
+            return left + (min(max(t, t0), t1) - t0) / (t1 - t0) * (x1 - left)
+
+        for t, text in timeline_ticks(t1):
+            c.create_line(tx(t), y0, tx(t), y1, fill=GRID)
+            c.create_text(tx(t), y1 + 10, text=text, fill=MUTED, font=("Segoe UI", 8))
+        top = y0
+        for (label, kind, data, color), weight in zip(tracks, weights):
+            row = unit * weight
+            mid = top + row / 2
+            top += row
+            c.create_text(x0, mid, text=label, fill=MUTED, font=("Segoe UI", 9), anchor="w")
+            if kind == "bars":
+                for a, b in data:
+                    c.create_rectangle(tx(a), mid - row * 0.28, max(tx(b), tx(a) + 2), mid + row * 0.28,
+                                       fill=colors[color], outline="")
+                continue
+            c.create_line(left, mid, x1, mid, fill=EDGE)
+            points = []
+            for t, v in data:
+                if points:
+                    points += [tx(t), points[-1]]
+                points += [tx(t), mid - v * row * 0.42]
+            if points:
+                points += [x1, points[-1]]
+                c.create_line(*points, fill=colors[color], width=2)
+        for i, (t, key) in enumerate(tl["marks"]):
+            if t0 <= t <= t1:
+                c.create_line(tx(t), y0 - 4, tx(t), y1, fill=FG, dash=(3, 3))
+                c.create_text(tx(t) + (-4 if i == 0 else 4), y0 - 12, anchor="e" if i == 0 else "w",
+                              text=T("pf_flip_label") if key == "flip" else T("pf_cancel").upper(), fill=FG,
+                              font=("Bahnschrift SemiBold", 9))
 
     def _draw_stick(self, c, flip):
         """Stick gauche vu de face (haut = avant) : zone 20-45 degres, trajet autour du flip, direction du flip
@@ -784,7 +1106,7 @@ class TrainingWindow:
         cx = cy = size / 2
         r = size / 2 - 12
         win_c, loss_c = self.app.store["win_color"], self.app.store["loss_color"]
-        for lo, hi in ((20, 45), (-45, -20)):  # zones conseillees pour le flip
+        for lo, hi in ((22, 38), (-38, -22)):  # zones vertes de SpeedFlipTrainer pour le flip
             c.create_arc(cx - r, cy - r, cx + r, cy + r, start=90 - hi, extent=hi - lo, fill=GRID, outline="")
         c.create_oval(cx - r, cy - r, cx + r, cy + r, outline=EDGE, width=2)
         c.create_line(cx - r, cy, cx + r, cy, fill=EDGE)
@@ -827,11 +1149,17 @@ class TrainingWindow:
         tk.Label(guide, text=T("sg_side"), bg=PANEL, fg=MUTED, font=BODY_FONT).pack(side="right", padx=(0, 6))
         if self.app.store["guide_pos"]:
             _button(guide, T("sg_reset_pos"), self.reset_guide_position, bg=EDGE).pack(side="left", padx=(10, 0))
+        auto = tk.BooleanVar(value=self.app.store["guide_auto"])
+        self.vars.append(auto)
+        tk.Checkbutton(box, text=T("sg_auto_option"), variable=auto, bg=PANEL, fg=FG, font=BODY_FONT, selectcolor=BG,
+                       activebackground=PANEL, activeforeground=FG, anchor="w", highlightthickness=0, bd=0,
+                       command=lambda: self.app.set_option("guide_auto", auto.get())).pack(fill="x", padx=12,
+                                                                                           pady=(4, 0))
         self._label(box, T("sg_move_hint"), fg=MUTED, bg=PANEL, font=("Segoe UI", 9), margin=70, padx=12)
         grid = tk.Frame(box, bg=PANEL)
         grid.pack(fill="x", padx=8, pady=(4, 10))
         bindings = self.app.store["pad"]
-        for i, action in enumerate(("jump", "boost", "roll", "roll_l", "roll_r")):
+        for i, action in enumerate(PAD_ACTIONS):
             row, col = divmod(i, 2)
             cell = tk.Frame(grid, bg=PANEL)
             cell.grid(row=row, column=col, sticky="w", padx=4, pady=2)
@@ -843,6 +1171,55 @@ class TrainingWindow:
                      anchor="w").pack(side="left")
             if connected and not waiting:
                 _button(cell, T("pad_change"), lambda a=action: self.capture(a), bg=EDGE).pack(side="left")
+
+    def _match_timer(self):
+        """Chrono de chaque engagement en match (en ligne ou contre des bots), sur l'overlay."""
+        box = tk.Frame(self.content, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
+        box.pack(fill="x", pady=(12, 0))
+        var = tk.BooleanVar(value=self.app.store["kickoff_alert"])
+        self.vars.append(var)
+        tk.Checkbutton(box, text=T("tr_alert"), variable=var, bg=PANEL, fg=FG, font=BODY_FONT, selectcolor=BG,
+                       activebackground=PANEL, activeforeground=FG, anchor="w", highlightthickness=0, bd=0,
+                       command=lambda: self.app.set_option("kickoff_alert", var.get())).pack(
+            fill="x", padx=12, pady=(10, 2))
+        self._label(box, T("tr_how"), fg=MUTED, font=("Segoe UI", 9), bg=PANEL, margin=70, padx=12, pady=(0, 10))
+
+    def _pack_code(self):
+        """Code du pack d'engagements conseille, a copier dans le jeu (Entrainement personnalise > Code)."""
+        box = tk.Frame(self.content, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
+        box.pack(fill="x", pady=(12, 0))
+        row = tk.Frame(box, bg=PANEL)
+        row.pack(fill="x", padx=12, pady=(8, 2))
+        tk.Label(row, text=T("dr_pack"), bg=PANEL, fg=MUTED, font=BODY_FONT).pack(side="left")
+        tk.Label(row, text=KICKOFF_PACK, bg=PANEL, fg=FG, font=("Bahnschrift SemiBold", 14)).pack(side="left",
+                                                                                              padx=(8, 12))
+        button = _button(row, T("dr_pack_copy"), None, bg=EDGE)
+        button.configure(command=lambda: self.copy_pack(button))
+        button.pack(side="left")
+        self._label(box, T("dr_pack_hint"), fg=MUTED, bg=PANEL, font=("Segoe UI", 9), margin=70, padx=12,
+                    pady=(0, 8))
+
+    def copy_pack(self, button):
+        self.win.clipboard_clear()
+        self.win.clipboard_append(KICKOFF_PACK)
+        button.configure(text=T("dr_pack_copied"))
+        self.win.after(1500, lambda: button.winfo_exists() and button.configure(text=T("dr_pack_copy")))
+
+    def _pad_setup(self):
+        """Assistant : demande les boutons du joueur un par un, tant qu'il ne les a pas indiques."""
+        box = tk.Frame(self.content, bg=PANEL, highlightbackground=WARN, highlightthickness=1)
+        box.pack(fill="x", pady=(12, 0))
+        tk.Label(box, text=T("pad_setup_title"), bg=PANEL, fg=WARN, font=BODY_FONT, anchor="w").pack(
+            fill="x", padx=12, pady=(8, 2))
+        self._label(box, T("pad_setup_text"), fg=MUTED, bg=PANEL, font=("Segoe UI", 9), margin=70, padx=12)
+        row = tk.Frame(box, bg=PANEL)
+        row.pack(fill="x", padx=12, pady=(6, 10))
+        _button(row, T("pad_setup_start"), self.app.ask_pad_setup, bg=EDGE).pack(side="left")
+        _button(row, T("pad_setup_keep"), self.keep_buttons, bg=BG).pack(side="left", padx=(8, 0))
+
+    def keep_buttons(self):
+        self.app.set_option("pad_checked", True)
+        self.show()
 
     def reset_guide_position(self):
         self.app.reset_guide_position()
@@ -869,6 +1246,7 @@ class TrainingWindow:
                 bindings[action] = "" if pressed == "Back" else pressed
                 self.app.set_option("pad", bindings)
             self.capturing = None
+            self.app.set_option("pad_checked", True)
             self.show()
             return
         self.win.after(30, lambda: self.capture(action, deadline, before & self.app.pad.held()))

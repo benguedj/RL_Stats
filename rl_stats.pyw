@@ -43,7 +43,7 @@ import synth  # noqa: E402
 from history import History  # noqa: E402
 from i18n import T  # noqa: E402
 from obs_server import OBS_K, OBS_URL, ObsServer  # noqa: E402
-from training import TrainingWindow, flip_card_info, seconds_text  # noqa: E402
+from training import PadSetup, TrainingWindow, flip_card_info, seconds_text  # noqa: E402
 from ui_windows import WARN, HistoryWindow, SettingsWindow, hex_to_rgb, show_notice, show_welcome  # noqa: E402
 
 if getattr(sys, "frozen", False):
@@ -810,7 +810,9 @@ class Store:
         "kick_targets": {"diag": 2.05, "offc": 2.3, "back": 2.6},  # objectif du defi par position (secondes)
         "drill": [],  # essais du defi d'engagements : {"t", "spawn", "dt", "miss", "exact", "flip"}
         "pad": dict(pad.DEFAULT_BINDINGS),  # boutons de la manette (analyse du speed flip)
+        "pad_checked": False,  # boutons indiques par le joueur (sinon : ceux par defaut, a lui faire regler)
         "stick_guide": False,  # guide du speed flip sur l'overlay (menu de l'overlay)
+        "guide_auto": True,  # guide affiche tout seul pendant un entrainement personnalise d'engagements
         "flip_side": "auto",  # cote du flip montre par le guide : "auto" (celui du dernier essai), "l" ou "r"
         "guide_pos": [],  # coin du guide en fractions de l'image du jeu ; vide : a droite, au-dessus de l'overlay
         "training": {},  # mecanique -> 0 a travailler, 1 en cours, 2 maitrisee
@@ -980,6 +982,9 @@ def kick_spawn(distance):
     return None
 
 
+CUSTOM_TRAINING = 21  # PlaylistId de l'entrainement personnalise (Stats API, tools/probe_stats_api.py)
+
+
 class MatchTracker:
     """Determine l'equipe du joueur, le mode, les stats et le resultat de chaque match."""
 
@@ -997,6 +1002,7 @@ class MatchTracker:
 
     def reset(self, guid):
         self.guid = guid
+        self.playlist = None  # PlaylistId envoye par le jeu (CUSTOM_TRAINING : entrainement personnalise)
         self.team_votes = Counter()
         self.name_votes = Counter()
         self.players = []
@@ -1168,6 +1174,8 @@ class MatchTracker:
 
     def _observe(self, data):
         game = data.get("Game") or {}
+        if isinstance(game.get("PlaylistId"), int):
+            self.playlist = game["PlaylistId"]
         players = data.get("Players") or []
         if players:
             self.players = players
@@ -1577,9 +1585,9 @@ class FloatingImage:
 
 class HudLayer:
     """Image mise a jour en continu (guide du speed flip), que l'on deplace en la faisant glisser :
-    on_move(x, y) est appele au lacher."""
+    on_move(x, y) est appele au lacher. Un clic dans img.info["close"] (croix) appelle on_close."""
 
-    def __init__(self, root, on_move):
+    def __init__(self, root, on_move, on_close):
         self.top = tk.Toplevel(root)
         self.top.overrideredirect(True)
         self.top.attributes("-topmost", True)
@@ -1589,7 +1597,8 @@ class HudLayer:
         self.pos = None
         self.img = None
         self.drag = None  # decalage entre la souris et le coin de l'image pendant un glisser
-        self.on_move = on_move
+        self.on_move, self.on_close = on_move, on_close
+        self.top.bind("<Motion>", self._hover)
         self.top.bind("<ButtonPress-1>", self._press)
         self.top.bind("<B1-Motion>", self._motion)
         self.top.bind("<ButtonRelease-1>", self._release)
@@ -1604,8 +1613,22 @@ class HudLayer:
         self.pos, self.img = (x, y), img
         self.layer.show(img, x, y)
 
+    def _on_close(self, e):
+        """La souris est-elle sur la croix ?"""
+        if not (self.pos and self.img):
+            return False
+        x0, y0, x1, y1 = self.img.info.get("close", (0, 0, 0, 0))
+        x, y = e.x_root - self.pos[0], e.y_root - self.pos[1]
+        return x0 <= x <= x1 and y0 <= y <= y1
+
+    def _hover(self, e):
+        if not self.drag:
+            self.top.configure(cursor="hand2" if self._on_close(e) else "fleur")
+
     def _press(self, e):
-        if self.pos:
+        if self._on_close(e):
+            self.on_close()
+        elif self.pos:
             self.drag = (e.x_root - self.pos[0], e.y_root - self.pos[1])
 
     def _motion(self, e):
@@ -1699,7 +1722,6 @@ class Overlay:
         self.settings_window = None
         self.history_window = None
         self.training_window = None
-        self.kick_log = []  # engagements de la session (hors ligne compris) : {"t", "who", "dt", "result"...}
         self.fullscreen_window = None  # avertissement "plein ecran" ouvert
         self.fullscreen_warned = False  # deja averti pour ce passage en plein ecran
         self.hotkeys = None
@@ -1722,6 +1744,12 @@ class Overlay:
         self.q = queue.Queue()
         self.tracker = MatchTracker(self.store, self.add_result, self.on_match_start, self.on_goal, self.on_kickoff)
         self.pad = pad.Pad()  # manette : inputs de chaque essai du defi d'engagements
+        self.pad_popup = None  # fenetre "Indique tes boutons" (training.PadSetup)
+        self.pad_asked = False  # fenetre deja ouverte toute seule pendant cette session
+        # Entrainement personnalise en cours : pack d'engagements (True), autre pack (False) ou pas encore su
+        self.in_custom, self.kick_training = False, None
+        self.guide_dismissed = False  # guide auto masque par le joueur pendant cet entrainement
+        self.guide_told = False  # bandeau "guide affiche" deja montre pendant cet entrainement
         self.pad.start()
         self.last_flip = None  # analyse complete (avec le trajet du stick) du dernier essai
         self.screens = Screens()
@@ -1747,7 +1775,7 @@ class Overlay:
         self.card = SummaryCard(self.root, lambda: self.place_met_chips())
         self.met_card = FloatingImage(self.root, self.dismiss_met)
         self.goal_layer = GoalLayer(self.root)
-        self.guide_layer = HudLayer(self.root, self.guide_moved)
+        self.guide_layer = HudLayer(self.root, self.guide_moved, self.toggle_stick_guide)
         self._guide_key = None
         self.viewport = self.compute_viewport()
         if not self.store["offsets_1440"]:
@@ -2397,7 +2425,7 @@ class Overlay:
             pm.sub(T("m_players"), self.menu_players, pm.I_PEOPLE),
             pm.item(T("m_history"), self.open_history, pm.I_HISTORY),
             pm.item(T("m_training"), self.open_training, pm.I_TRAIN),
-            pm.choice(T("m_guide"), self.store["stick_guide"], self.toggle_stick_guide),
+            pm.choice(T("m_guide"), self.guide_visible(), self.toggle_stick_guide),
             pm.item(T("m_settings"), self.open_settings, pm.I_SETTINGS),
             pm.item(T("m_last_summary"), lambda: self.show_summary(), pm.I_SUMMARY),
             pm.item(T("m_share"), self.share_card, pm.I_COPY),
@@ -2623,22 +2651,18 @@ class Overlay:
 
     def on_kickoff(self, kick):
         """Engagement : premier contact (ou temps ecoule en entrainement personnalise), puis son resultat
-        2,5 s plus tard. Hors ligne, chaque engagement que je touche le premier est un essai du defi."""
-        online = bool(self.tracker.guid)
+        2,5 s plus tard. Hors ligne, chaque engagement que je touche le premier est un essai d'engagement rapide."""
         if kick["result"] is not None:
-            if self.kick_log and self.kick_log[-1]["result"] is None:
-                self.kick_log[-1]["result"] = kick["result"]
-        elif not online and kick["who"] == "me":
+            return  # resultat de l'engagement : deja compte dans les stats du match (MatchTracker)
+        who = kick["who"]
+        if not self.tracker.guid and who == "me":
             if kick["spawn"] or kick["miss"]:  # sinon ce n'etait pas un engagement (entrainement libre)
                 self.add_drill(kick)
-        else:
-            who, dt = kick["who"], kick["dt"]
-            self.kick_log.append({"t": time.time(), "who": who, "dt": round(dt, 2), "result": None,
-                                  "online": online, "mode": self.tracker.mode, "spawn": kick["spawn"]})
-            self.kick_log = self.kick_log[-50:]
-            if self.store["kickoff_alert"] and who != "mate" and not self.tracker.finished:
-                self.show_banner(T("kick_me" if who == "me" else "kick_opp", s=seconds_text(dt)),
-                                 designs.GREEN if who == "me" else designs.RED, None, 3)
+            elif self.in_custom and self.kick_training is None:
+                self.kick_training = False  # premier tir sans engagement : pack de tirs, pas de guide
+        elif self.store["kickoff_alert"] and who != "mate" and not self.tracker.finished:
+            self.show_banner(T("kick_me" if who == "me" else "kick_opp", s=seconds_text(kick["dt"])),
+                             designs.GREEN if who == "me" else designs.RED, None, 3)
         if self.training_window:
             self.training_window.refresh()
 
@@ -2651,8 +2675,14 @@ class Overlay:
             flip = pad.analyse(self.pad.window(kick["go"] - 0.3, end), kick["go"], end, self.store["pad"])
             if flip:
                 self.last_flip = dict(flip, t=attempt["t"])
-                attempt["flip"] = {k: v for k, v in flip.items() if k != "path"}
+                attempt["flip"] = {k: v for k, v in flip.items() if k not in ("path", "tl")}
         self.store["drill"] = (self.store["drill"] + [attempt])[-500:]
+        if self.in_custom:
+            self.kick_training = True
+        if self.pad.connected and not self.pad_ready() and not self.pad_asked:
+            # Boutons par defaut, rarement ceux du joueur : on les demande (sans prendre le focus du jeu)
+            self.pad_asked = True
+            self.ask_pad_setup(quiet=True)
         if kick["miss"]:
             self.show_banner(T("drill_miss", s=seconds_text(kick["dt"])), designs.AMBER, None, 2.5)
         else:
@@ -2662,12 +2692,37 @@ class Overlay:
                                d=diff_text), designs.GREEN if diff <= 0 else designs.RED, None, 2.5)
         if attempt.get("flip") and not self.hidden:
             img = designs.render_flip_card(flip_card_info(attempt, self.store["kick_targets"]), self.design_k())
-            self.card.show(img, *self.beside_overlay(img), 6)
+            self.card.show(img, *self.beside_overlay(img), 9)
+
+    def pad_ready(self):
+        """Boutons de la manette indiques par le joueur (ou deja changes avant l'assistant)."""
+        return self.store["pad_checked"] or self.store["pad"] != pad.DEFAULT_BINDINGS
+
+    def ask_pad_setup(self, quiet=False):
+        """Fenetre "Indique tes boutons". quiet : ouverte toute seule en jeu, sans lui prendre le focus."""
+        if self.pad_popup:
+            self.pad_popup.win.lift()
+        elif self.pad.connected:
+            self.pad_popup = PadSetup(self, quiet)
+
+    def guide_visible(self):
+        """Guide du speed flip affiche : choisi par le joueur, ou tout seul en entrainement d'engagements. Le jeu
+        n'envoie pas le code du pack : on le reconnait a ses tirs (ballon immobile au depart, puis un vrai
+        engagement)."""
+        if self.store["stick_guide"]:
+            return True
+        if not (self.store["guide_auto"] and self.in_custom) or self.guide_dismissed:
+            return False
+        if self.kick_training is None:  # premier tir : ballon immobile au depart, comme pour un engagement
+            return bool(self.tracker.kick and self.tracker.kick["ball_still"])
+        return self.kick_training
 
     def toggle_stick_guide(self):
-        """Guide du speed flip affiche ou non, quand le joueur veut (menu de l'overlay, fenetre Entrainement)."""
-        on = not self.store["stick_guide"]
+        """Guide du speed flip affiche ou non, quand le joueur veut (menu de l'overlay, fenetre Entrainement).
+        Masquer le guide affiche tout seul le masque jusqu'a la fin de cet entrainement."""
+        on = not self.guide_visible()
         self.set_option("stick_guide", on)
+        self.guide_dismissed = not on
         if on and not self.pad.connected:
             self.show_banner(T("sg_no_pad"), designs.AMBER, None, 3)
         else:
@@ -2679,7 +2734,14 @@ class Overlay:
         """Guide du speed flip (30 fois par seconde) : geste conseille, stick en direct, etape en cours."""
         self.root.after(33, self.tick_stick_guide)
         tracker, now = self.tracker, time.perf_counter()
-        if not (self.store["stick_guide"] and self.pad.connected and not self.hidden and not self.auto_hidden):
+        custom = tracker.playlist == CUSTOM_TRAINING and not tracker.guid
+        if custom != self.in_custom:  # entree ou sortie de l'entrainement personnalise
+            self.in_custom, self.kick_training, self.guide_dismissed, self.guide_told = custom, None, False, False
+        visible = self.guide_visible() and self.pad.connected and not self.hidden and not self.auto_hidden
+        if visible and not self.store["stick_guide"] and not self.guide_told:
+            self.guide_told = True
+            self.show_banner(T("sg_auto_on"), designs.SKY, None, 3)
+        if not visible:
             if self._guide_key is not None:
                 self.guide_layer.hide()
                 self._guide_key = None
@@ -2691,28 +2753,33 @@ class Overlay:
         trying = bool(kick and kick["t"] is None)
         step = 0
         if trying:
-            flip = pad.analyse(self.pad.window(kick["go"] - 0.3, now), kick["go"], now, self.store["pad"])
-            step = 0 if flip["jump"] is None else 1 if flip["flip"] is None else 2 if flip["cancel"] is None else 3
+            samples = self.pad.window(kick["go"] - 0.3, now)
+            flip = pad.analyse(samples, kick["go"], now, self.store["pad"])
+            if flip["jump"] is None:
+                # Coup de stick : stick pousse presque a fond sur le cote depuis le depart
+                step = 1 if any(abs(x) >= 0.8 for t, _, x, _ in samples if t >= kick["go"]) else 0
+            else:
+                step = 2 if flip["flip"] is None else 3 if flip["cancel"] is None else 4
         last = self.last_flip if not trying else None
         side = {"l": -1, "r": 1}.get(self.store["flip_side"])
         if side is None:
             angle = (self.last_flip or {}).get("angle")
             side = 1 if angle and angle > 0 else -1
         if last:
-            step = 4 if last.get("cancel") is not None else 2 if last.get("flip") is not None else 0
+            step = 5 if last.get("cancel") is not None else 3 if last.get("flip") is not None else 0
         stick = (round(recent[-1][2], 2), round(recent[-1][3], 2))
         trail = tuple((round(s[2], 2), round(s[3], 2)) for s in recent)
         key = (stick, trail, step, side, id(last), i18n.lang())
         if key == self._guide_key:
             return
         self._guide_key = key
-        steps = [T("sg_jump"), T("sg_flip"), T("sg_cancel"), T("sg_hold")]
+        steps = [T("sg_tap"), T("sg_jump"), T("sg_flip"), T("sg_cancel"), T("sg_hold")]
         if last and last.get("cancel") is not None:
-            steps[2] += f"  {round(last['cancel'] * 1000)} MS"
+            steps[3] += f"  {round(last['cancel'] * 1000)} MS"
         img = designs.render_stick_guide({
             "title": T("sg_title"), "side": side, "stick": stick, "trail": trail, "step": step, "steps": steps,
             "done": [(x, y) for _, x, y in last["path"]] if last else None,
-            "labels": (T("pf_flip_label"), T("pf_cancel").upper())}, self.design_k())
+            "labels": (T("pf_flip_label"), T("pf_cancel").upper(), T("sg_tap_label"))}, self.design_k())
         self.guide_layer.show(img, *self.guide_position(img))
 
     def guide_moved(self, x, y):
