@@ -62,7 +62,7 @@ DATA_FILE = os.path.join(DATA_DIR, "stats.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "matches.json")
 LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
 
-APP_VERSION = "1.6.4"
+APP_VERSION = "1.7.0"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
 RESUME_HOURS = 2  # une session relancee dans ce delai reprend la ou elle en etait
