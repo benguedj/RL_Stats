@@ -41,13 +41,6 @@ TEXTS = {
     "card_footer": ("{min} MIN DE JEU  ·  GITHUB.COM/BENGUEDJ/RL_STATS",
                     "{min} MIN PLAYED  ·  GITHUB.COM/BENGUEDJ/RL_STATS"),
 
-    # Statut Discord
-    "dc_details": ("{mode}{w}W – {l}L ({p} %)", "{mode}{w}W – {l}L ({p}%)"),
-    "dc_streak": ("Série de {n} victoires", "{n} win streak"),
-    "dc_games": ("{n} matchs cette session", "{n} games this session"),
-    "dc_waiting": ("Session en cours", "Session in progress"),
-    "dc_button": ("Obtenir RL Stats", "Get RL Stats"),
-
     # Resume de match
     "sum_win": ("VICTOIRE", "VICTORY"),
     "sum_loss": ("DÉFAITE", "DEFEAT"),
@@ -190,9 +183,6 @@ TEXTS = {
     "s_version": ("Version {v}", "Version {v}"),
     "s_tilt": ("Alerte tilt : pause conseillée (3 défaites d'affilée, 2 h de jeu)",
                "Tilt alert: break suggestion (3 losses in a row, 2 h played)"),
-    "s_discord": ("Statut Discord (Rich Presence)", "Discord status (Rich Presence)"),
-    "s_discord_na": ("Indisponible : aucun identifiant d'application Discord dans cette version",
-                     "Unavailable: no Discord application ID in this build"),
 
     # Historique
     "h_title": ("RL Stats - Historique", "RL Stats - History"),

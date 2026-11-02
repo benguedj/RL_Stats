@@ -57,8 +57,8 @@ CAPTIONS = {
     "hours": ("Tes meilleures heures pour jouer", "Your best time to play"),
     "analysis": ("Stats avancées : engagements, boost, où tes buts entrent",
                  "Advanced stats: kickoffs, boost, where your goals go in"),
-    "settings": ("Paramètres : sons, alertes, mode streamer OBS, Discord…",
-                 "Settings: sounds, alerts, OBS streamer mode, Discord…"),
+    "settings": ("Paramètres : sons, alertes, mode streamer OBS…",
+                 "Settings: sounds, alerts, OBS streamer mode…"),
     "styles": ("Plusieurs styles et formes", "Several styles and shapes"),
     "colors": ("Tes couleurs", "Your colors"),
     "card": ("Carte de session, à coller sur Discord", "Session card, ready to paste in Discord"),
@@ -512,16 +512,15 @@ def main():
         json.dump({**placement, "player_name": args.name, "lang": args.lang, "design": "tableau", "shape": "vertical",
                    "animations": True, "sounds": args.sounds, "summary": True, "summary_time": 7,
                    "met_alert": True, "goal_alert": True, "session_timer": True, "check_updates": False,
-                   "hotkeys": False, "discord": False, "obs": False, "tilt_alert": False, "resume_session": False,
+                   "hotkeys": False, "obs": False, "tilt_alert": False, "resume_session": False,
                    "auto_hide": False, "tray": True, "taskbar": True}, f)
 
     rl = load_app()
-    # Donnees de demo, et rien qui touche au vrai jeu ou a Discord
+    # Donnees de demo, et rien qui touche au vrai jeu
     rl.DATA_DIR = DEMO_DIR
     rl.DATA_FILE = os.path.join(DEMO_DIR, "stats.json")
     rl.HISTORY_FILE = os.path.join(DEMO_DIR, "matches.json")
     rl.LOG_FILE = os.path.join(DEMO_DIR, "overlay.log")
-    rl.DISCORD_CLIENT_ID = ""
     rl.ensure_stats_api_enabled = lambda: False
 
     class NoApi:

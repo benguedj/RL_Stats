@@ -18,7 +18,6 @@ Dépôt public : https://github.com/benguedj/RL_Stats (site : `docs/`, servi par
 | `history.py` | `matches.json` : historique des matchs et agrégats |
 | `i18n.py` | Tous les textes de l'interface : `TEXTS = {"cle": ("fr", "en")}`, lus avec `T("cle", n=3)` |
 | `obs_server.py` | Page locale pour la source navigateur OBS (mode streamer) |
-| `discord_rpc.py` | Rich Presence Discord |
 | `synth.py` | Sons générés |
 | `tools/demo.py` | Démo scriptée (matchs simulés, données dans un dossier temporaire) pour les vidéos |
 | `packaging/` | Notices du zip, package MSIX (Microsoft Store), manifestes winget |

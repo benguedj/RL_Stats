@@ -59,7 +59,6 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 | **Tray icon & taskbar button** | Click to hide / show the overlay, right-click for the menu. |
 | **Session card** | One click copies an image of your session to the clipboard, ready to paste in Discord. |
 | **Advanced stats** | Kickoffs won, average boost, time at 0 boost, supersonic time, map of where your goals go in, for a period or a single game. |
-| **Discord status** | Shows your mode, session score and streak on your Discord profile (Rich Presence, off by default). |
 | **Tilt alert** | Suggests a break after 3 losses in a row or 2 hours of play (off by default). |
 | **Smart display** | Hides itself when the game is closed or minimized, resumes your session if restarted within 2 h, can start with Windows and stay hidden until the game starts. |
 | **Update notifications** | Tells you when a new version is available on GitHub. |
@@ -137,7 +136,6 @@ build.bat
 | `rl_stats.pyw` | Entry point: Stats API connection, match tracking, overlay window, tray icon, hotkeys |
 | `designs.py` | Overlay styles, animations and match summary card, drawn with Pillow |
 | `history.py` | Match history (`matches.json`) and statistics |
-| `discord_rpc.py` | Discord status (Rich Presence) |
 | `synth.py` | Built-in sounds (win, loss, goals), synthesized: no audio file shipped |
 | `ui_windows.py` | Settings and History windows (Tkinter) |
 | `popup_menu.py` | Overlay menu (dark panel, keyboard navigation) |
@@ -151,8 +149,8 @@ build.bat
 
 No account, no analytics: match history and settings stay on your PC (`%APPDATA%\RL Stats`).
 The only Internet access is the update check (`api.github.com`, can be turned off; not in the Microsoft
-Store version, which the Store updates). Discord status and streamer mode are off by default and only
-talk to your own PC. Full details: [privacy policy](https://benguedj.github.io/RL_Stats/privacy.html).
+Store version, which the Store updates). Streamer mode is off by default and only
+talks to your own PC. Full details: [privacy policy](https://benguedj.github.io/RL_Stats/privacy.html).
 
 Official releases are built from this repository by [GitHub Actions](.github/workflows/release.yml),
 never on a personal machine. The exe isn't code-signed; a Microsoft Store version, signed by Microsoft,
@@ -190,7 +188,7 @@ adversaires déjà croisés (affichés pendant le match), objectif et chrono de 
 animation sous le score à chaque but, animations et sons (intégrés ou tes propres MP3 / WAV),
 personnalisation (6 styles, couleurs, opacité), multi-écrans et ultra-larges, avertissement si le jeu
 est en plein écran, mode streamer (OBS),
-icône près de l'horloge, carte de session à coller sur Discord, statut Discord, stats avancées
+icône près de l'horloge, carte de session à coller sur Discord, stats avancées
 (engagements, boost, carte des buts, par période ou par match), alerte tilt, masquage auto quand le jeu est fermé, reprise de session,
 démarrage avec Windows, notification des mises à jour, français / anglais.
 

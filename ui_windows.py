@@ -280,12 +280,6 @@ class SettingsWindow:
                lambda: self.changed("goal_alert")).pack(fill="x", padx=12, pady=6)
         _check(f, T("s_tilt"), self.var("tilt_alert", tk.BooleanVar),
                lambda: self.changed("tilt_alert")).pack(fill="x", padx=12, pady=6)
-        discord = _check(f, T("s_discord"), self.var("discord", tk.BooleanVar), lambda: self.changed("discord"))
-        discord.pack(fill="x", padx=12, pady=(6, 2 if not self.app.discord_available else 6))
-        if not self.app.discord_available:
-            discord.configure(state="disabled", disabledforeground=MUTED)
-            tk.Label(f, text=T("s_discord_na"), bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(
-                fill="x", padx=30, pady=(0, 6))
 
         _check(f, T("s_obs"), self.var("obs", tk.BooleanVar),
                lambda: self.changed("obs")).pack(fill="x", padx=12, pady=(10, 2))

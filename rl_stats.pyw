@@ -39,7 +39,6 @@ import designs  # noqa: E402
 import i18n  # noqa: E402
 import popup_menu as pm  # noqa: E402
 import synth  # noqa: E402
-from discord_rpc import DiscordPresence  # noqa: E402
 from history import History  # noqa: E402
 from i18n import T  # noqa: E402
 from obs_server import OBS_K, OBS_URL, ObsServer  # noqa: E402
@@ -64,8 +63,6 @@ LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
 APP_VERSION = "1.6.3"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
-# "Application ID" Discord (https://discord.com/developers/applications) : vide = statut Discord indisponible
-DISCORD_CLIENT_ID = "1561117533959098438"
 RESUME_HOURS = 2  # une session relancee dans ce delai reprend la ou elle en etait
 
 API_HOST = "127.0.0.1"
@@ -806,7 +803,7 @@ class Store:
         "sounds": False, "volume": 60, "custom_sounds": {}, "summary": True, "summary_time": 12, "met_alert": True,
         "goal_alert": True, "session_timer": True,
         "obs": False, "hotkeys": True, "tray": True, "taskbar": True,
-        "auto_hide": True, "resume_session": True, "check_updates": True, "tilt_alert": False, "discord": False,
+        "auto_hide": True, "resume_session": True, "check_updates": True, "tilt_alert": False,
         "session_saved": {},
         "offsets_1440": False,  # decalages en pixels 1440p (avant : pixels de l'ecran du moment)
     }
@@ -1604,10 +1601,6 @@ class Overlay:
             self.obs.start()
         if self.store["hotkeys"]:
             self.start_hotkeys()
-        self.discord = DiscordPresence(DISCORD_CLIENT_ID, log)
-        if DISCORD_CLIENT_ID:
-            self.discord.start()
-            self.update_presence()
         if self.store["check_updates"] and not PACKAGED:
             threading.Thread(target=check_update, args=(self.q,), daemon=True).start()
         if getattr(sys, "frozen", False) and not PACKAGED:
@@ -1678,9 +1671,6 @@ class Overlay:
         elif key == "auto_hide":
             self.check_focus(reschedule=False)
             return
-        elif key == "discord":
-            self.update_presence()
-            return
         elif key == "met_alert":
             self.update_met_chips()
             return
@@ -1741,7 +1731,6 @@ class Overlay:
     # Pour la fenetre Parametres
     version = APP_VERSION
     packaged = PACKAGED
-    discord_available = bool(DISCORD_CLIENT_ID)
     startup_enabled = staticmethod(startup_enabled)
     set_startup = staticmethod(set_startup)
 
@@ -1858,7 +1847,6 @@ class Overlay:
         else:
             return
         self.save_session()
-        self.update_presence()
 
     def session_clock(self):
         """Temps de jeu de la session, en direct ("1:23:45", "42:07"), ou None."""
@@ -2103,28 +2091,6 @@ class Overlay:
                 self.queue_banner(T("tilt_time", h=hours), designs.AMBER, None, 8)
         self.root.after(60000, self.check_play_time)
 
-    def update_presence(self):
-        """Statut Discord : mode, score de la session, serie."""
-        if not DISCORD_CLIENT_ID:
-            return
-        w, l = self.counts()
-        mode = f"{self.current_mode} · " if self.current_mode and self.store["counter"] == "mode" else ""
-        if self.streak >= 2:
-            state = T("dc_streak", n=self.streak)
-        elif w + l:
-            state = T("dc_games", n=sum(sum(v) for v in self.session.values()))
-        else:
-            state = T("dc_waiting")
-        activity = {
-            "details": T("dc_details", mode=mode, w=w, l=l, p=round(w * 100 / (w + l)) if w + l else 0),
-            "state": state,
-            "assets": {"large_image": "logo", "large_text": f"RL Stats {APP_VERSION}"},
-            "buttons": [{"label": T("dc_button"), "url": REPO_URL}],
-        }
-        if self.session_start:
-            activity["timestamps"] = {"start": int(time.time() - self.session_elapsed())}
-        self.discord.update(activity, self.store["discord"] and self.connected)
-
     def share_card(self):
         """Copie une image de la session dans le presse-papiers."""
         matches = self.session_matches()
@@ -2343,7 +2309,6 @@ class Overlay:
                                 self.paused_total, self.paused_at = 0, None
                                 self.save_session()
                         self.refresh()
-                        self.update_presence()
                 elif kind == "update":
                     self.update_info = payload
                     log(f"Mise a jour disponible : {payload[0]}")
@@ -2523,7 +2488,6 @@ class Overlay:
             self.queue_banner(T("goal_reached"), designs.GOLD, "w")
         if not won and self.store["tilt_alert"] and self.streak in (-3, -5, -7):
             self.queue_banner(T("tilt_losses", n=-self.streak), designs.AMBER, None, 7)
-        self.update_presence()
         if self.history_window:
             self.history_window.refresh()
 
@@ -2553,7 +2517,6 @@ class Overlay:
         else:
             self.streak = 0
         self.save_session()
-        self.update_presence()
         self.refresh()
 
     def reset_session(self):
@@ -2563,7 +2526,6 @@ class Overlay:
         self.paused_total, self.paused_at = 0, None
         self.break_hours = 0
         self.save_session()
-        self.update_presence()
         self.refresh()
 
     def edit_name(self):
