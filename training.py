@@ -38,19 +38,30 @@ PAD_ACTIONS = ("jump", "boost", "roll", "roll_l", "roll_r")  # boutons a assigne
 PERFECT = {"diag": 1.95, "offc": 2.20, "back": 2.53}
 NO_FLIP = {"diag": 2.05, "offc": 2.30, "back": 2.60}
 CLOSE = 0.10
+# En match, les temps mesures sont environ 0.07 s plus courts qu'en entrainement (journal de matchs en ligne :
+# diagonale 1.87 au mieux pour le joueur, 1.83 pour des adversaires ; decalee 2.15 ; en entrainement, record a 1.95)
+MATCH_SHIFT = 0.07
+MATCH_PERFECT = {k: round(v - MATCH_SHIFT, 2) for k, v in PERFECT.items()}
+MATCH_NO_FLIP = {k: round(v - MATCH_SHIFT, 2) for k, v in NO_FLIP.items()}
 GRADE_TEXTS = {"perfect": "dr_perfect", "good": "dr_good", "close": "dr_close", "slow": "dr_slow"}
 PERFECT_COLOR = "#facc15"  # or, comme le bandeau et la carte (designs.GOLD)
 REF_COLOR = "#cbd5e1"  # geste parfait sur la frise (pointilles)
 
 
-def kick_grade(attempt):
+def kick_refs(match):
+    """(parfait, sans flip) : temps de reference par position, en entrainement ou en match."""
+    return (MATCH_PERFECT, MATCH_NO_FLIP) if match else (PERFECT, NO_FLIP)
+
+
+def kick_grade(attempt, match=False):
     """"perfect", "good", "close" ou "slow" pour un essai touche (seuils fixes par position)."""
     dt, spawn = attempt["dt"], attempt["spawn"]
-    if dt <= PERFECT[spawn]:
+    perfect, no_flip = kick_refs(match)
+    if dt <= perfect[spawn]:
         return "perfect"
-    if dt <= NO_FLIP[spawn]:
+    if dt <= no_flip[spawn]:
         return "good"
-    return "close" if dt <= NO_FLIP[spawn] + CLOSE else "slow"
+    return "close" if dt <= no_flip[spawn] + CLOSE else "slow"
 
 
 def kick_records(store):
@@ -65,14 +76,15 @@ def kick_records(store):
     return records
 
 
-def kick_gap_text(attempt):
+def kick_gap_text(attempt, match=False):
     """Texte a cote du temps : parfait, ecart avec le parfait (bon), ou avec le temps sans flip (presque, lent)."""
-    grade, spawn = kick_grade(attempt), attempt["spawn"]
+    grade, spawn = kick_grade(attempt, match), attempt["spawn"]
+    perfect, no_flip = kick_refs(match)
     if grade == "perfect":
         return T("gap_perfect")
     if grade == "good":
-        return T("gap_to_perfect", d=seconds_text(attempt["dt"] - PERFECT[spawn]))
-    return T("gap_no_flip", d=seconds_text(attempt["dt"] - NO_FLIP[spawn]))
+        return T("gap_to_perfect", d=seconds_text(attempt["dt"] - perfect[spawn]))
+    return T("gap_no_flip", d=seconds_text(attempt["dt"] - no_flip[spawn]))
 
 
 def diff_text(value):
@@ -1003,9 +1015,11 @@ class TrainingWindow:
         for col, (text, color) in enumerate(heads):
             tk.Label(grid, text=text, bg=PANEL, fg=color, font=("Bahnschrift SemiBold", 11), anchor="w").grid(
                 row=0, column=col, sticky="w", padx=(0, 18))
-        for row, spawn in enumerate(SPAWN_KEYS, start=1):
-            no_flip = NO_FLIP[spawn]
-            cells = [T("tr_" + spawn), "≤ " + seconds_text(PERFECT[spawn]), "≤ " + seconds_text(no_flip),
+        rows = [(spawn, match) for match in (False, True) for spawn in SPAWN_KEYS]
+        for row, (spawn, match) in enumerate(rows, start=1):
+            perfect, no_flip = kick_refs(match)[0][spawn], kick_refs(match)[1][spawn]
+            name = T("tr_" + spawn) + (" · " + T("dr_in_match") if match else "")
+            cells = [name, "≤ " + seconds_text(perfect), "≤ " + seconds_text(no_flip),
                      "≤ " + seconds_text(no_flip + CLOSE), "> " + seconds_text(no_flip + CLOSE)]
             for col, text in enumerate(cells):
                 tk.Label(grid, text=text, bg=PANEL, fg=MUTED if col == 0 else FG, font=BODY_FONT, anchor="w").grid(

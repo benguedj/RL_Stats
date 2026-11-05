@@ -63,7 +63,7 @@ DATA_FILE = os.path.join(DATA_DIR, "stats.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "matches.json")
 LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
 
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.8.1"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
 RESUME_HOURS = 2  # une session relancee dans ce delai reprend la ou elle en etait
@@ -1063,7 +1063,7 @@ class MatchTracker:
             now = self.now
             if not guid:
                 self.last_round = now
-            self.kick = {"go": now, "t": None, "dist": 0.0, "at": now, "v": 0.0, "ball_still": None}
+            self.kick = {"go": now, "t": None, "dist": 0.0, "at": now, "v": 0.0, "ball_still": None, "cars": {}}
             if self.guid and self.players:
                 self.on_start(self)
         elif event == "BallHit":
@@ -1252,6 +1252,15 @@ class MatchTracker:
             v = float(p.get("Speed") or 0) * KMH
             kick["dist"] += (kick["v"] + v) / 2 * (now - kick["at"])
             kick["at"], kick["v"] = now, v
+        # Meme calcul pour chaque voiture dont le jeu envoie la vitesse (au moins notre equipe) : position de
+        # depart de celui qui touche le ballon. car = [distance, instant, vitesse, equipe]
+        for q in players:
+            if not isinstance(q.get("Speed"), (int, float)):
+                continue
+            v = float(q["Speed"]) * KMH
+            car = kick["cars"].setdefault(q.get("Name", "").strip().lower(), [0.0, kick["go"], 0.0, None])
+            car[0] += (car[2] + v) / 2 * (now - car[1])
+            car[1], car[2], car[3] = now, v, q.get("TeamNum")
         speed = ball.get("Speed")
         if not isinstance(speed, (int, float)):
             return
@@ -1269,16 +1278,18 @@ class MatchTracker:
         kick["exact"], kick["miss"], kick["result"] = exact, False, None
         toucher = ((data.get("Players") or [{}])[0]) or {}
         team = self.my_team()
-        if toucher.get("Name", "").strip().lower() == self.my_name().strip().lower():
+        kick["name"] = toucher.get("Name", "")
+        if kick["name"].strip().lower() == self.my_name().strip().lower():
             kick["who"] = "me"
         elif team is not None and toucher.get("TeamNum") is not None:
             kick["who"] = "mate" if int(toucher["TeamNum"]) == int(team) else "opp"
         else:
             kick["who"] = None
         dist = kick["dist"] + kick["v"] * (kick["t"] - kick["at"])
-        kick["spawn"] = kick_spawn(dist) if kick["who"] == "me" else None
+        kick["spawn"] = kick_spawn(dist) if kick["who"] == "me" else self._toucher_spawn(kick, team)
         log(f"Engagement : contact {kick['who']} en {kick['dt']:.3f} s, {dist:.0f} u parcourues "
-            f"-> {kick['spawn']}{'' if exact else ' (contact deduit)'}")
+            f"-> {kick['spawn']}{'' if exact else ' (contact deduit)'} ; voitures "
+            + ", ".join(f"{c[3]}:{c[0] + c[2] * (kick['t'] - c[1]):.0f}" for c in kick["cars"].values()))
         if kick["who"] and kick["dt"] < 8:  # au-dela, personne n'est vraiment alle au ballon
             if self.guid:
                 self.kick_first[("me", "mate", "opp").index(kick["who"])] += 1
@@ -1286,6 +1297,28 @@ class MatchTracker:
                     self.kick_times.append(round(kick["dt"], 2))
                     self.kick_spawns.append(kick["spawn"] or "")
             self.on_kickoff(dict(kick))
+
+    def _toucher_spawn(self, kick, team):
+        """Position de depart d'un coequipier ou d'un adversaire qui touche le premier. Le jeu ne donne pas la
+        position des voitures : distance parcourue (vitesse integree) jusqu'au contact. Si le jeu n'envoie pas
+        la vitesse de l'adversaire : les positions de depart sont symetriques, il part donc de la meme position
+        que celui de notre equipe qui va au ballon (le plus proche, celui de gauche en cas d'egalite), c'est-a-dire
+        celui qui a le plus roule au moment du contact."""
+        def dist(car):
+            return car[0] + car[2] * (kick["t"] - car[1])
+
+        car = kick["cars"].get(kick["name"].strip().lower())
+        if car is not None:
+            return kick_spawn(dist(car))
+        if kick["who"] != "opp" or team is None:
+            return None
+        ours = [dist(c) for c in kick["cars"].values() if c[3] is not None and int(c[3]) == int(team)]
+        if len(ours) < self.team_size_now(team):
+            return None  # vitesse d'un coequipier inconnue : on ne peut pas savoir qui est alle au ballon
+        return kick_spawn(max(ours)) if ours else None
+
+    def team_size_now(self, team):
+        return sum(1 for p in self.players if p.get("TeamNum") is not None and int(p["TeamNum"]) == int(team))
 
     def _missed_kick(self):
         """Entrainement personnalise : temps du tir ecoule sans toucher le ballon."""
@@ -2663,26 +2696,27 @@ class Overlay:
                 self.add_drill(kick)
             elif self.in_custom and self.kick_training is None:
                 self.kick_training = False  # premier tir sans engagement : pack de tirs, pas de guide
-        elif self.store["kick_card"] and who in ("me", "opp") and not self.tracker.finished:
+        elif self.store["kick_card"] and who in ("me", "mate", "opp") and not self.tracker.finished:
             self.show_kick_pill(kick)
         if self.training_window:
             self.training_window.refresh()
 
     def show_kick_pill(self, kick):
-        """Engagement en match : petite carte discrete a cote de l'overlay (4 s). Mon temps et sa couleur
-        quand je touche le premier (avec l'angle et le cancel si une manette est branchee), sinon le temps de
-        l'adversaire. Pas enregistree dans le defi : en match on part avec 33 de boost."""
+        """Engagement en match : petite carte discrete a cote de l'overlay (4 s) pour celui qui touche le premier
+        (moi, un coequipier ou l'adversaire) : temps, position et couleur d'apres les temps de reference des
+        matchs, avec l'angle et le cancel de mon flip si une manette est branchee. Pas enregistree dans le defi."""
         if self.hidden or self.auto_hidden:
             return
+        who = kick["who"]
         attempt = {"dt": round(kick["dt"], 3), "spawn": kick["spawn"] or "", "miss": False,
                    "exact": kick["exact"]}
-        info = {"label": T("kick_pill_opp"), "time": attempt_time_text(attempt), "text": "", "state": "opp",
-                "cells": []}
-        if kick["who"] == "me":
-            info["label"], info["state"] = T("kick_pill_me"), "me"
-            if attempt["spawn"]:
-                info.update(label=T("tr_" + attempt["spawn"]).upper(), state=kick_grade(attempt),
-                            text=kick_gap_text(attempt))
+        label = T("kick_pill_" + who) if who != "mate" or not kick.get("name") else short_name(kick["name"], 14)
+        info = {"label": label.upper(), "time": attempt_time_text(attempt), "text": "",
+                "state": "opp" if who == "opp" else "me", "cells": []}
+        if attempt["spawn"]:
+            info.update(label=info["label"] + " · " + T("tr_" + attempt["spawn"]).upper(),
+                        state=kick_grade(attempt, match=True), text=kick_gap_text(attempt, match=True))
+        if who == "me":
             if self.pad.connected:
                 end = kick["go"] + kick["dt"]
                 flip = pad.analyse(self.pad.window(kick["go"] - 0.3, end), kick["go"], end, self.store["pad"])

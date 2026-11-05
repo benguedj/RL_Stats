@@ -264,22 +264,29 @@ TEXTS = {
 
     # Entrainement
     "m_training": ("Entraînement (bêta)", "Training (beta)"),
-    "kick_pill_me": ("1ER AU BALLON", "FIRST TO BALL"),
-    "kick_pill_opp": ("ADVERSAIRE 1ER", "OPPONENT FIRST"),
+    "kick_pill_me": ("TOI", "YOU"),
+    "kick_pill_mate": ("COÉQUIPIER", "TEAMMATE"),
+    "kick_pill_opp": ("ADVERSAIRE", "OPPONENT"),
     "tr_title": ("RL Stats - Entraînement (bêta)", "RL Stats - Training (beta)"),
     "tr_beta": ("BÊTA · en cours de test, tes retours sont les bienvenus", "BETA · still being tested, feedback welcome"),
     "tr_kickoffs": ("Engagements", "Kickoffs"),
     "tr_mechanics": ("Mécaniques", "Mechanics"),
     "tr_alert": ("Afficher une petite carte après chaque engagement en match",
                  "Show a small card after each kickoff in a match"),
-    "tr_how": ("Discrète, à côté de l'overlay pendant 4 s : ton temps entre le GO et le premier contact, avec "
-               "la même couleur qu'en entraînement (parfait, bon, presque, lent), et l'angle et le cancel de ton "
-               "flip si une manette est branchée. Si l'adversaire touche avant toi : son temps. Rien quand c'est "
-               "un coéquipier qui y va. En ligne et hors ligne, pas en entraînement libre (pas de coup d'envoi).",
-               "Discreet, next to the overlay for 4 s: your time between GO and the first touch, with the same "
-               "color as in training (perfect, good, close, slow), and the angle and cancel of your flip when a "
-               "controller is plugged in. If the opponent touches first: their time. Nothing when a teammate "
-               "goes. Online and offline, not in free play (no kickoff)."),
+    "tr_how": ("Discrète, à côté de l'overlay pendant 4 s, à chaque engagement : le temps entre le GO et le "
+               "premier contact de celui qui touche en premier (toi, un coéquipier ou l'adversaire), sa position "
+               "et sa couleur (parfait, bon, presque, lent) d'après des temps de référence propres aux matchs, un "
+               "peu plus courts qu'en entraînement. L'angle et le cancel de ton flip si une manette est branchée. "
+               "La position de l'adversaire est celle de ton équipe : les positions de départ sont symétriques, "
+               "et celui qui y va (le plus proche du ballon, celui de gauche en cas d'égalité) est le joueur de "
+               "ton équipe qui a le plus roulé au moment du contact. En ligne et hors ligne, pas en entraînement libre (pas de coup d'envoi).",
+               "Discreet, next to the overlay for 4 s, at each kickoff: the time between GO and the first touch "
+               "of whoever touches first (you, a teammate or the opponent), their position and color (perfect, "
+               "good, close, slow) from reference times specific to matches, a bit shorter than in training. "
+               "The angle and cancel of your flip when a controller is plugged in. The opponent's position is "
+               "your team's: spawns are symmetric, and the one who goes (closest to the ball, the left one on a "
+               "tie) is the player of your team who drove the farthest by the time of the touch. Online and offline, not in free play "
+               "(no kickoff)."),
     "tr_col_time": ("Heure", "Time"),
     "tr_col_dt": ("Temps", "Time to ball"),
     "tr_col_result": ("Résultat", "Result"),
@@ -319,10 +326,13 @@ TEXTS = {
     "dr_levels": ("Couleurs de tes temps", "Your time colors"),
     "dr_levels_hint": ("Vert : ton speed flip te fait gagner du temps par rapport au même départ en boostant tout "
                        "droit sans flip. Or : speed flip parfait, environ 0,1 s plus rapide. Temps estimés avec la "
-                       "physique du jeu.",
+                       "physique du jeu. En match, le chrono mesure environ 0,07 s de moins qu'en entraînement : "
+                       "la petite carte de match utilise ses propres temps de référence.",
                        "Green: your speed flip saves time compared with the same start boosting straight without "
                        "a flip. Gold: perfect speed flip, about 0.1 s faster. Times estimated with the game "
-                       "physics."),
+                       "physics. In a match, the timer measures about 0.07 s less than in training: the match card "
+                       "uses its own reference times."),
+    "dr_in_match": ("en match", "in a match"),
     "dr_attempts": ("Derniers essais", "Latest attempts"),
     "dr_none": ("Aucun essai pour l'instant : lance un pack d'engagements en entraînement personnalisé.",
                 "No attempts yet: load a kickoff pack in custom training."),
