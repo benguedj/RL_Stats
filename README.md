@@ -20,17 +20,19 @@ nothing is injected into the game and nothing touches the anti-cheat. Everything
 
 ## Download
 
-👉 **[Download the latest version](https://github.com/benguedj/RL_Stats/releases/latest)** (`RL Stats.zip`, Windows 10/11)
+👉 **[Get it from the Microsoft Store](https://apps.microsoft.com/detail/9P84H4FDNKR7)** (Windows 10/11): signed by Microsoft, so no
+SmartScreen warning, and updated by the Store.
 
-Or with [winget](https://learn.microsoft.com/windows/package-manager/winget/), then launch it by typing
+Or **[download the zip](https://github.com/benguedj/RL_Stats/releases/latest)** (`RL Stats.zip`, no install needed),
+or install it with [winget](https://learn.microsoft.com/windows/package-manager/winget/), then launch it by typing
 `rlstats` in a terminal or in the Run box (`Win+R`):
 
 ```
 winget install benguedj.RLStats
 ```
 
-1. Unzip and double-click **`RL Stats.exe`** (no install needed).
-   Windows SmartScreen may say *"Windows protected your PC"*: click **More info → Run anyway**
+1. Launch **RL Stats** from the Start menu (Store version), or unzip and double-click **`RL Stats.exe`**.
+   With the zip, Windows SmartScreen may say *"Windows protected your PC"*: click **More info → Run anyway**
    (the exe is not code-signed).
 2. Start Rocket League, or **restart** it if it was already running (the game only reads its
    config at startup). The overlay enables the Stats API by itself.
@@ -157,8 +159,8 @@ Store version, which the Store updates). Streamer mode is off by default and onl
 talks to your own PC. Full details: [privacy policy](https://benguedj.github.io/RL_Stats/privacy.html).
 
 Official releases are built from this repository by [GitHub Actions](.github/workflows/release.yml),
-never on a personal machine. The exe isn't code-signed; a Microsoft Store version, signed by Microsoft,
-is on the way.
+never on a personal machine. The exe in the zip isn't code-signed; the [Microsoft Store version](https://apps.microsoft.com/detail/9P84H4FDNKR7)
+is signed by Microsoft.
 
 ## License
 
@@ -177,10 +179,11 @@ Rocket League is a trademark of Psyonix LLC.*
 
 [![Vidéo de démo de RL Stats](docs/video_fr.jpg)](https://youtu.be/Wo7JtuIgp4Q)
 
-👉 **[Télécharger la dernière version](https://github.com/benguedj/RL_Stats/releases/latest)**
+👉 **[Installer depuis le Microsoft Store](https://apps.microsoft.com/detail/9P84H4FDNKR7)** : signée par Microsoft (pas d'alerte SmartScreen)
+et mise à jour par le Store. Ou **[télécharge le zip](https://github.com/benguedj/RL_Stats/releases/latest)**
 (ou `winget install benguedj.RLStats`), puis :
 
-1. Dézippe et lance **`RL Stats.exe`**. Si Windows affiche *« Windows a protégé votre ordinateur »* :
+1. Lance **RL Stats** depuis le menu Démarrer (version Store), ou dézippe et lance **`RL Stats.exe`**. Avec le zip, si Windows affiche *« Windows a protégé votre ordinateur »* :
    **Informations complémentaires → Exécuter quand même** (l'exe n'est pas signé).
 2. Lance Rocket League (ou **relance-le** s'il était ouvert). L'overlay active la Stats API tout seul.
 3. Dans les options vidéo du jeu, choisis **Fenêtré sans bordure**. RL Stats vérifie le réglage du
@@ -215,6 +218,6 @@ avec l'anti-cheat. Les données restent sur ton PC (`%APPDATA%\RL Stats`).
 
 **Confidentialité** : pas de compte, pas de statistiques d'utilisation. Le seul accès à Internet est
 la vérification des mises à jour (`api.github.com`, désactivable ; absente de la version Microsoft Store).
-Les versions officielles sont construites par GitHub Actions depuis ce dépôt. L'exe n'est pas signé ;
-une version Microsoft Store, signée par Microsoft, arrive bientôt. Détails dans la
+Les versions officielles sont construites par GitHub Actions depuis ce dépôt. L'exe du zip n'est pas signé ;
+la [version Microsoft Store](https://apps.microsoft.com/detail/9P84H4FDNKR7) est signée par Microsoft. Détails dans la
 [politique de confidentialité](https://benguedj.github.io/RL_Stats/privacy.html).
