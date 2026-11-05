@@ -23,6 +23,7 @@ I_HISTORY, I_SETTINGS, I_PEOPLE, I_SUMMARY, I_COPY = "\ue81c", "\ue713", "\ue716
 I_RESET, I_STYLE, I_EDIT, I_HIDE, I_QUIT = "\ue72c", "\ue771", "\ue70f", "\ued1a", "\ue7e8"
 I_UPDATE, I_PLAY, I_PLACE, I_LINK, I_BOT = "\ue896", "\ue768", "\ue81d", "\ue8a7", "\ue99a"
 I_SHAPE, I_SIZE, I_COLOR, I_CONTACT, I_TRAIN = "\ue97c", "\ue740", "\ue790", "\ue77b", "\ue7fc"
+I_PAD = "\ue765"  # clavier / boutons (I_TRAIN est deja la manette)
 _CHEVRON, _BACK, _CHECK = "\ue76c", "\ue76b", "\ue73e"
 
 

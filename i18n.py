@@ -264,22 +264,22 @@ TEXTS = {
 
     # Entrainement
     "m_training": ("Entraînement (bêta)", "Training (beta)"),
-    "kick_me": ("1ER AU BALLON · {s}", "FIRST TO BALL · {s}"),
-    "kick_opp": ("ADVERSAIRE 1ER · {s}", "OPPONENT FIRST · {s}"),
+    "kick_pill_me": ("1ER AU BALLON", "FIRST TO BALL"),
+    "kick_pill_opp": ("ADVERSAIRE 1ER", "OPPONENT FIRST"),
     "tr_title": ("RL Stats - Entraînement (bêta)", "RL Stats - Training (beta)"),
     "tr_beta": ("BÊTA · en cours de test, tes retours sont les bienvenus", "BETA · still being tested, feedback welcome"),
     "tr_kickoffs": ("Engagements", "Kickoffs"),
     "tr_mechanics": ("Mécaniques", "Mechanics"),
-    "tr_alert": ("Afficher le chrono de chaque engagement sur l'overlay",
-                 "Show the time of each kickoff on the overlay"),
-    "tr_how": ("Le chrono mesure le temps entre le GO et le premier contact avec le ballon, et qui touche en "
-               "premier. Il dépend de ta position de départ : compare-toi surtout à toi-même sur une même "
-               "position. Il marche en ligne et hors ligne (match d'exhibition contre des bots, match privé), "
-               "mais pas en entraînement libre, où il n'y a pas de coup d'envoi.",
-               "The timer measures the time between GO and the first touch of the ball, and who touches first. "
-               "It depends on where you spawn: compare yourself mostly with your own times from the same spawn. "
-               "It works online and offline (exhibition against bots, private match), but not in free play, "
-               "where there is no kickoff."),
+    "tr_alert": ("Afficher une petite carte après chaque engagement en match",
+                 "Show a small card after each kickoff in a match"),
+    "tr_how": ("Discrète, à côté de l'overlay pendant 4 s : ton temps entre le GO et le premier contact, avec "
+               "la même couleur qu'en entraînement (parfait, bon, presque, lent), et l'angle et le cancel de ton "
+               "flip si une manette est branchée. Si l'adversaire touche avant toi : son temps. Rien quand c'est "
+               "un coéquipier qui y va. En ligne et hors ligne, pas en entraînement libre (pas de coup d'envoi).",
+               "Discreet, next to the overlay for 4 s: your time between GO and the first touch, with the same "
+               "color as in training (perfect, good, close, slow), and the angle and cancel of your flip when a "
+               "controller is plugged in. If the opponent touches first: their time. Nothing when a teammate "
+               "goes. Online and offline, not in free play (no kickoff)."),
     "tr_col_time": ("Heure", "Time"),
     "tr_col_dt": ("Temps", "Time to ball"),
     "tr_col_result": ("Résultat", "Result"),
@@ -291,14 +291,22 @@ TEXTS = {
     "tr_back": ("Centre", "Back center"),
     "tr_ball": ("Ballon", "Ball"),
     "tr_boost": ("Gros boost", "Big boost"),
-    "drill_hit": ("{spawn} · {s} ({d})", "{spawn} · {s} ({d})"),
-    "drill_miss": ("PAS TOUCHÉ · {s}", "MISSED · {s}"),
+    "drill_hit": ("{spawn} · {s} · {d}", "{spawn} · {s} · {d}"),
+    "gap_perfect": ("parfait !", "perfect!"),
+    "gap_to_perfect": ("à {d} du parfait", "{d} from perfect"),
+    "gap_no_flip": ("{d} plus lent que sans flip", "{d} slower than no flip"),
+    "drill_miss": ("PAS TOUCHÉ · {s} · TEMPS DU PACK ÉCOULÉ", "MISSED · {s} · PACK TIME RAN OUT"),
+    "gap_miss": ("temps du pack écoulé", "pack time ran out"),
     "dr_title": ("Engagement rapide (fast kickoff)", "Fast kickoff"),
-    "dr_intro": ("Touche le ballon avant l'objectif de chaque position de départ, en entraînement personnalisé "
-                 "ou hors ligne. Tous tes essais sont enregistrés.",
-                 "Touch the ball before the target for each spawn, in custom training or offline. "
+    "dr_intro": ("Touche le ballon le plus vite possible depuis chaque position de départ, en entraînement "
+                 "personnalisé ou hors ligne. Tous tes essais sont enregistrés.",
+                 "Touch the ball as fast as you can from each spawn, in custom training or offline. "
                  "All your attempts are saved."),
-    "dr_tile_sub": ("{ok} sur {n} sous l'objectif · meilleur {best}", "{ok} of {n} under target · best {best}"),
+    "dr_tile_sub": ("{ok} sur {n} plus rapides que sans flip · parfaits : {p} · record {best}",
+                    "{ok} of {n} faster than no flip · perfect: {p} · record {best}"),
+    "dr_record_card": ("Record -{d}", "Record -{d}"),
+    "dr_record_banner": ("NOUVEAU RECORD ({d} de mieux)", "NEW RECORD ({d} better)"),
+    "dr_perfect": ("Parfait", "Perfect"),
     "dr_missed": ("Pas touchés", "Missed"),
     "dr_missed_sub": ("temps du tir écoulé avant le contact", "shot time ran out before contact"),
     "dr_pack": ("Pack d'engagements conseillé", "Recommended kickoff pack"),
@@ -308,17 +316,25 @@ TEXTS = {
                      "Le guide du speed flip s'affiche tout seul pendant les engagements.",
                      "In the game: Training > Custom training > Code, then paste the code (Ctrl + V). The speed "
                      "flip guide shows up on its own during kickoffs."),
-    "dr_targets": ("Objectifs", "Targets"),
+    "dr_levels": ("Couleurs de tes temps", "Your time colors"),
+    "dr_levels_hint": ("Vert : ton speed flip te fait gagner du temps par rapport au même départ en boostant tout "
+                       "droit sans flip. Or : speed flip parfait, environ 0,1 s plus rapide. Temps estimés avec la "
+                       "physique du jeu.",
+                       "Green: your speed flip saves time compared with the same start boosting straight without "
+                       "a flip. Gold: perfect speed flip, about 0.1 s faster. Times estimated with the game "
+                       "physics."),
     "dr_attempts": ("Derniers essais", "Latest attempts"),
     "dr_none": ("Aucun essai pour l'instant : lance un pack d'engagements en entraînement personnalisé.",
                 "No attempts yet: load a kickoff pack in custom training."),
     "dr_col_spawn": ("Position", "Spawn"),
-    "dr_col_diff": ("Écart", "Gap"),
-    "dr_ok": ("Réussi", "Made it"),
-    "dr_slow": ("Trop lent", "Too slow"),
+    "dr_col_diff": ("vs parfait", "vs perfect"),
+    "dr_good": ("Bon", "Good"),
+    "dr_close": ("Presque", "Close"),
+    "dr_slow": ("Lent", "Slow"),
     "dr_miss": ("Pas touché", "Missed"),
     "dr_clear": ("Effacer les essais", "Clear attempts"),
-    "dr_clear_confirm": ("Effacer tous les essais du défi ?", "Clear all challenge attempts?"),
+    "dr_clear_confirm": ("Effacer tous les essais du défi ? Tes records sont gardés.",
+                         "Clear all challenge attempts? Your records are kept."),
     "pf_last": ("Dernier speed flip", "Latest speed flip"),
     "pf_none": ("Fais un essai avec la manette pour voir l'analyse de ton speed flip : moment du saut, angle "
                 "du flip, délai du cancel, air roll et boost.",
@@ -371,10 +387,22 @@ TEXTS = {
     "tl_jump": ("Saut", "Jump"),
     "tl_roll": ("Air roll", "Air roll"),
     "tl_boost": ("Boost", "Boost"),
-    "rp_title": ("Ton geste au ralenti, à côté de celui du guide", "Your motion in slow motion, next to the guide motion"),
+    "rp_title": ("Ton geste au ralenti, à côté du geste parfait", "Your motion in slow motion, next to the perfect "
+                 "motion"),
     "rp_speed": ("Vitesse", "Speed"),
+    "rp_ref_title": ("Le geste parfait au ralenti", "The perfect motion in slow motion"),
+    "rp_ref_hint": ("Stick gauche vu de face (haut = avant) et boutons allumés quand ils sont enfoncés, sur les "
+                    "timings du speed flip enregistré de SpeedFlipTrainer.",
+                    "Left stick seen from the front (up = forward) and buttons lit while pressed, on the timings "
+                    "of the speed flip recorded by SpeedFlipTrainer."),
+    "tl_ref_title": ("Inputs du geste parfait, du départ au cancel", "Inputs of the perfect motion, from the start "
+                     "to the cancel"),
+    "tl_legend": ("En couleur : ton essai. En pointillés clairs : le geste parfait, sur le même temps depuis le "
+                  "départ. Ton input après le pointillé : tu es en retard ; avant : en avance.",
+                  "In color: your attempt. Light dotted: the perfect motion, on the same time since the start. "
+                  "Your input after the dotted one: you are late; before it: early."),
     "rp_you": ("Toi", "You"),
-    "rp_ref": ("Geste du guide", "Guide motion"),
+    "rp_ref": ("Geste parfait", "Perfect motion"),
     "rp_clock": ("1er saut {t}", "1st jump {t}"),
     "rp_hint": ("Les deux sticks sont calés sur ton premier saut : compare où ils sont au même moment. Zone grisée : "
                 "angle du flip conseillé. Trait gris : tout le geste ; trait bleu : déjà fait.",
@@ -396,16 +424,17 @@ TEXTS = {
                     "comme telle, par exemple via Steam Input).",
                     "No controller detected: the speed flip analysis needs an Xbox controller (or one seen as "
                     "such, for example through Steam Input)."),
-    "pad_hint": ("Assigne les mêmes boutons que dans le jeu (Paramètres > Commandes) : clique sur Changer puis "
-                 "appuie sur le bouton (Back / View pour aucun). Seuls les inputs de chaque essai sont analysés.",
-                 "Set the same buttons as in the game (Settings > Controls): click Change, then press the button "
-                 "(Back / View for none). Only the inputs of each attempt are analyzed."),
+    "pad_hint": ("L'analyse utilise les mêmes boutons que dans le jeu (Paramètres > Commandes). Seuls les inputs "
+                 "de chaque essai sont analysés.",
+                 "The analysis uses the same buttons as in the game (Settings > Controls). Only the inputs of each "
+                 "attempt are analyzed."),
     "pad_jump": ("Saut", "Jump"),
     "pad_boost": ("Boost", "Boost"),
     "pad_roll": ("Air roll", "Air roll"),
     "pad_roll_l": ("Air roll gauche", "Air roll left"),
     "pad_roll_r": ("Air roll droite", "Air roll right"),
     "pad_change": ("Changer", "Change"),
+    "pad_reset": ("Réinitialiser les boutons", "Reset buttons"),
     "pad_press": ("Appuie sur un bouton…", "Press a button…"),
     "pad_setup_title": ("Indique tes boutons avant de t'entraîner", "Set your buttons before you practice"),
     "pad_setup_text": ("L'analyse du speed flip lit ta manette : elle doit savoir sur quels boutons tu as mis le "
@@ -415,10 +444,16 @@ TEXTS = {
                        "the game for jump, boost and air roll (Settings > Controls). Without that, the boost and "
                        "air roll of your attempts are not measured."),
     "pad_setup_start": ("Régler mes boutons", "Set my buttons"),
-    "pad_setup_keep": ("Garder ceux par défaut", "Keep the defaults"),
     "pad_setup_step": ("{i}/{n} · Appuie sur ton bouton : {action}",
                        "{i}/{n} · Press your button: {action}"),
-    "pad_setup_later": ("Plus tard", "Later"),
+    "pad_title": ("Boutons de la manette", "Controller buttons"),
+    "pad_ok_button": ("OK", "OK"),
+    "pad_open": ("Boutons de la manette…", "Controller buttons…"),
+    "m_pad": ("Boutons de la manette…", "Controller buttons…"),
+    "s_pad": ("Boutons de la manette", "Controller buttons"),
+    "s_pad_button": ("Régler…", "Set…"),
+    "s_pad_hint": ("Pour l'analyse du speed flip (Entraînement) : les mêmes boutons que dans le jeu.",
+                   "For the speed flip analysis (Training): the same buttons as in the game."),
     "pad_setup_done": ("C'est réglé !", "All set!"),
     "pad_setup_skip": ("Back / View si tu ne l'utilises pas. Sans appui pendant 8 s, le bouton actuel est gardé.",
                        "Back / View if you don't use it. With no press for 8 s, the current button is kept."),
@@ -430,6 +465,7 @@ TEXTS = {
     "sg_tap": ("BOOST + PETIT DÉCALAGE", "BOOST + SMALL OFFSET"),
     "sg_jump": ("SAUTE VERS 0,5 S", "JUMP AT ABOUT 0.5 S"),
     "sg_tap_label": ("PETIT DÉCALAGE", "SMALL OFFSET"),
+    "sg_jump_bar": ("1ER SAUT : SAUTE DANS LE VERT", "1ST JUMP: JUMP IN THE GREEN"),
     "sg_flip": ("TOURNE + FLIP EN DIAGONALE", "SWEEP + FLIP DIAGONALLY"),
     "sg_cancel": ("CONTINUE VERS L'ARRIÈRE", "KEEP GOING BACK"),
     "sg_hold": ("GARDE + AIR ROLL", "HOLD + AIR ROLL"),

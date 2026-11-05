@@ -61,7 +61,7 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 | **Tray icon & taskbar button** | Click to hide / show the overlay, right-click for the menu. |
 | **Session card** | One click copies an image of your session to the clipboard, ready to paste in Discord. |
 | **Advanced stats** | Kickoffs won, average boost, time at 0 boost, supersonic time, map of where your goals go in, for a period or a single game. |
-| **Training (beta)** | Guides for kickoffs and mechanics (speed flip, half flip, wavedash, musty, flip reset...). **Fast kickoff**: in custom training (pack code `A503-264C-A7EB-D282`, copy button in the app), each attempt is timed and, with an Xbox-compatible controller, your speed flip is analyzed with the timings of the BakkesMod plugin SpeedFlipTrainer (first jump, flip angle, cancel, air roll, boost), with tips and a slow-motion replay of your stick next to the guide motion. A stick guide shows up on the overlay during kickoff training. |
+| **Training (beta)** | Guides for kickoffs and mechanics (speed flip, half flip, wavedash, musty, flip reset...). **Fast kickoff**: in custom training (pack code `A503-264C-A7EB-D282`, copy button in the app), each attempt is timed and colored: gold **Perfect** under the time of an ideal speed flip (1.95 s diagonal, 2.20 s off-center, 2.53 s back center), green when your flip beats boosting straight without a flip (2.05 / 2.30 / 2.60 s), orange when close, red when slower; your record for each spawn is kept and celebrated when you beat it. And, with an Xbox-compatible controller, your speed flip is analyzed with the timings of the BakkesMod plugin SpeedFlipTrainer (first jump, flip angle, cancel, air roll, boost), with tips, a slow-motion replay of your stick next to the perfect motion, and the perfect inputs drawn over your input timeline. A stick guide shows up on the overlay during kickoff training, with a timing bar that fills from the start so you can anticipate your first jump (green zone of SpeedFlipTrainer). In matches, a small discreet card shows your kickoff time with the same colors (and your flip angle and cancel with a controller), or the opponent's time if they touch first. |
 | **Tilt alert** | Suggests a break after 3 losses in a row or 2 hours of play (off by default). |
 | **Smart display** | Hides itself when the game is closed or minimized, resumes your session if restarted within 2 h, can start with Windows and stay hidden until the game starts. |
 | **Update notifications** | Tells you when a new version is available on GitHub. |
@@ -82,7 +82,7 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 - **Drag** it to move it (the position is remembered per style, and follows resolution changes).
 - **Not lined up with your boost meter?** Set *Appearance → RL interface scale* to the same value as the game's *Interface Scale* setting, or pick the *Vertical (right edge)* shape, which doesn't depend on it.
 - **Shortcuts**: `Ctrl+Shift+H` hide / show, `Ctrl+Shift+R` reset session, `Ctrl+Shift+O` open the menu (in game, the mouse cursor is hidden).
-- **Training (beta)**: menu → *Training*. The first time you take a kickoff with a controller, a small window asks which buttons you use in the game (jump, boost, air roll), so the speed flip analysis reads the right ones. Close the stick guide with its `✕`.
+- **Training (beta)**: menu → *Training*. Set the buttons you use in the game (jump, boost, air roll) in menu → *Controller buttons* (also in Settings), so the speed flip analysis reads the right ones: click *Change* next to a button and press it on your controller, or *Set my buttons* to do them all in a row. The window opens by itself the first time you go to training with a controller. Close the stick guide with its `✕`.
 - **Players in this game (Tracker)**: click a name to open their Tracker Network profile (rank, MMR).
 - If wins and losses are swapped: right-click → *Set my in-game name…*
 
@@ -201,11 +201,20 @@ démarrage avec Windows, notification des mises à jour, français / anglais.
 
 **Entraînement (bêta)** : guides des engagements et des mécaniques (speed flip, half flip, wavedash, musty,
 flip reset...). **Engagement rapide** : en entraînement personnalisé (pack `A503-264C-A7EB-D282`, à copier
-depuis l'appli), chaque essai est chronométré et, avec une manette compatible Xbox, ton speed flip est
+depuis l'appli), chaque essai est chronométré et coloré : **Parfait** en or sous le temps d'un speed flip idéal (1,95 s en
+diagonale, 2,20 s décalée, 2,53 s au centre), vert si ton flip bat le même départ en boostant tout droit sans flip
+(2,05 / 2,30 / 2,60 s), orange si c'est presque, rouge si c'est plus lent ; ton record par position est gardé et salué quand tu le bats.
+Avec une manette compatible Xbox, ton speed flip est
 analysé avec les repères du plugin BakkesMod SpeedFlipTrainer (1er saut, angle du flip, cancel, air roll,
-boost) : conseils, et ton geste rejoué au ralenti à côté de celui du guide. Un guide du stick s'affiche sur
-l'overlay pendant l'entraînement d'engagements (fermable avec sa croix). Au premier engagement, une petite
-fenêtre te demande tes boutons (saut, boost, air roll).
+boost) : conseils, ton geste rejoué au ralenti à côté du geste parfait, et les inputs parfaits dessinés sur la frise de
+tes inputs. Un guide du stick s'affiche sur
+l'overlay pendant l'entraînement d'engagements (fermable avec sa croix), avec une barre de timing qui se remplit
+depuis le départ pour anticiper ton premier saut (zone verte de SpeedFlipTrainer). En match, une petite carte discrète donne
+ton temps d'engagement avec les mêmes couleurs (et l'angle et le cancel de ton flip avec une manette), ou celui de
+l'adversaire s'il touche avant toi. Tes boutons (saut, boost, air roll) se
+règlent dans menu → *Boutons de la manette* (aussi dans les Paramètres) : *Changer* à côté d'un bouton puis appuie
+dessus sur la manette, ou *Régler mes boutons* pour tous les faire d'affilée. La fenêtre s'ouvre toute seule la
+première fois que tu vas t'entraîner avec une manette.
 
 **Utilisation** : bouton `☰` au survol de l'overlay, clic droit (ou sur l'icône près de l'horloge) pour le menu,
 glisser pour le déplacer, `Ctrl+Maj+H` pour le masquer, `Ctrl+Maj+R` pour réinitialiser la session,

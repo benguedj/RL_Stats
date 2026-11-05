@@ -1284,7 +1284,7 @@ def _gauge(img, box, gauge, s):
 
 
 def render_flip_card(info, k):
-    """Carte affichee apres un essai du defi. info = {"title", "time", "diff", "state": "ok" | "slow" | "miss",
+    """Carte affichee apres un essai du defi. info = {"title", "time", "diff", "state": "perfect" | "good" | "close" | "slow" | "miss",
     "cells": [(libelle, valeur, note "ok" | "warn" | "bad" | None)], "gauges": jauges (_gauge), "advices":
     [textes]} : textes deja traduits."""
     s = k * SS
@@ -1303,7 +1303,7 @@ def render_flip_card(info, k):
     img.alpha_composite(_blur_cached(shadow, 8 * s))
 
     d = ImageDraw.Draw(img)
-    color = {"ok": GREEN, "slow": RED}.get(info["state"], AMBER)
+    color = {"perfect": GOLD, "good": GREEN, "slow": RED}.get(info["state"], AMBER)  # presque, pas touche : orange
     d.polygon(shape, fill=(11, 19, 34, 240), outline=EDGE, width=max(1, round(1.2 * s)))
 
     # En-tete : position de depart, temps et ecart avec l'objectif
@@ -1350,6 +1350,57 @@ def render_flip_card(info, k):
     return finish(img, w_px, h_px)
 
 
+def _baseline_row(parts):
+    """parts = [(texte, police, couleur, ecart avant)] alignes sur la meme ligne de base -> image RGBA rognee
+    (text_img aligne le haut des textes : de tailles differentes, ils ne sont plus sur la meme ligne)."""
+    ascent = max(f.getmetrics()[0] for _, f, _, _ in parts)
+    descent = max(f.getmetrics()[1] for _, f, _, _ in parts)
+    w = sum(gap + f.getbbox(t)[2] for t, f, _, gap in parts) + 8
+    img = Image.new("RGBA", (w, ascent + descent + 8), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    x = 4
+    for t, f, color, gap in parts:
+        x += gap
+        d.text((x, 4 + ascent), t, font=f, fill=color, anchor="ls")
+        x += f.getbbox(t)[2]
+    return img.crop(img.getbbox() or (0, 0, 1, 1))
+
+
+def render_kick_pill(info, k):
+    """Petite carte discrete apres un engagement en match. info = {"label": position ou "ADVERSAIRE 1ER",
+    "time", "text": texte colore ("" possible), "state": "perfect" | "good" | "close" | "slow" | "opp" | "me",
+    "cells": [(libelle, valeur, note "ok" | "warn" | "bad" | None)] (angle et cancel, peut etre vide)}."""
+    s = k * SS
+    color = {"perfect": GOLD, "good": GREEN, "close": AMBER, "slow": RED, "opp": RED}.get(info["state"], SKY)
+    pad, ph = 12 * s, 30 * s  # marge (ombre), hauteur d'une ligne
+    line1 = _baseline_row([(info["label"], font(round(11 * s), SEMI), MUTED, 0),
+                           (info["time"], font(round(16 * s)), FG, round(8 * s))]
+                          + ([(info["text"], font(round(12 * s), SEMI), color, round(8 * s))] if info["text"] else []))
+    parts = []
+    for label, value, note in info["cells"]:
+        parts += [(label, font(round(10 * s), SEMI), MUTED, round(14 * s) if parts else 0),
+                  (value, font(round(12 * s), SEMI), {"ok": GREEN, "warn": AMBER, "bad": RED}.get(note, FG),
+                   round(5 * s))]
+    line2 = _baseline_row(parts) if parts else None
+    inner_w = max(line1.width, line2.width if line2 else 0) + 26 * s
+    inner_h = ph + (20 * s if line2 else 0)
+    w_px, h_px = math.ceil((inner_w + 2 * pad) / SS), math.ceil((inner_h + 2 * pad) / SS)
+    W, H = w_px * SS, h_px * SS
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    box = [pad, pad, W - pad, H - pad]
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle(box, radius=10 * s, fill=(0, 0, 0, 110))
+    img.alpha_composite(_blur_cached(shadow, 6 * s))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle(box, radius=10 * s, fill=PANEL[:3] + (190,))  # un peu transparente : discrete
+    d.rounded_rectangle([box[0], box[1], box[0] + 4 * s, box[3]], radius=2 * s, fill=color)  # liseret
+    x = box[0] + 14 * s
+    img.alpha_composite(line1, (round(x), round(box[1] + ph / 2 - line1.height / 2)))
+    if line2:
+        img.alpha_composite(line2, (round(x), round(box[1] + ph + 10 * s - line2.height / 2 - 4 * s)))
+    return finish(img, w_px, h_px, opacity=0.9)
+
+
 def _arrow(d, p0, p1, color, width, head):
     """Fleche de p0 a p1 (pointe de taille head)."""
     d.line([p0, p1], fill=color, width=width)
@@ -1372,9 +1423,11 @@ def render_stick_guide(g, k):
     """Guide du speed flip : geste conseille du stick gauche (haut = avant), stick en direct et etapes.
     g = {"title", "side": -1 (flip a gauche) | 1, "stick": (x, y), "trail": [(x, y)], "done": [(x, y)] trajet
     du dernier essai ou None, "steps": [textes], "step": etape en cours (len(steps) : terminee),
-    "labels": (texte du flip, texte du cancel, texte du coup de stick)}"""
+    "labels": (texte du flip, texte du cancel, texte du coup de stick), "jump_label": titre de la barre du 1er
+    saut, "jump_bar": {"t": secondes depuis le depart (en direct) ou None, "jump": 1er saut (s) ou None,
+    "jump_text", "note": "ok" | "warn" | "bad"}}"""
     s = k * SS
-    BW, BH = 210, 318
+    BW, BH = 210, 352
     W, H = round(BW * k) * SS, round(BH * k) * SS
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -1400,30 +1453,24 @@ def render_stick_guide(g, k):
     d.line([cx - r, cy, cx + r, cy], fill=(30, 42, 68, 255), width=max(1, round(s)))
     d.line([cx, cy - r, cx, cy + r], fill=(30, 42, 68, 255), width=max(1, round(s)))
 
-    # Geste conseille : petit decalage vers 35 degres de l'autre cote au 1er saut, passage par le haut jusqu'a la
-    # diagonale (30 degres, flip), puis un arc le long du bord par le cote du flip jusqu'en bas (cancel)
-    def arc(a0, a1):
-        n = max(2, int(abs(a1 - a0) / 6))
-        return [at(0.94 * math.sin(math.radians(a0 + (a1 - a0) * i / n)),
-                   0.94 * math.cos(math.radians(a0 + (a1 - a0) * i / n))) for i in range(n + 1)]
+    # Geste conseille, en fleches enchainees (chacune part de la fin de la precedente) : petit decalage vers 35
+    # degres de l'autre cote au 1er saut, stick en diagonale (30 degres) pour le flip, puis tout en bas (cancel)
+    def toward(angle, length):
+        a = math.radians(angle)
+        return at(length * math.sin(a), length * math.cos(a))
 
-    a = math.radians(-35 * side)
-    tap = at(0.55 * math.sin(a), 0.55 * math.cos(a))
-    first, second = [tap] + arc(-5 * side, 30 * side), arc(30 * side, 180 * side)
-    start, flip, cancel = first[0], first[-1], second[-1]
-    _dotted(d, at(0, 0), start, SKY, round(3 * s), 6 * s)
-    for points, color in ((first, SKY), (second, GOLD)):
-        for p0, p1 in zip(points, points[1:]):
-            _dotted(d, p0, p1, color, round(3 * s), 6 * s)
-        _arrow(d, points[-2], points[-1], color, round(3 * s), 12 * s)
-    d.ellipse([start[0] - 5 * s, start[1] - 5 * s, start[0] + 5 * s, start[1] + 5 * s], outline=SKY,
-              width=round(2 * s))
+    start, flip, cancel = toward(-35 * side, 0.55), toward(30 * side, 0.94), toward(180, 0.94)
+    _arrow(d, at(0, 0), start, SKY, round(3 * s), 11 * s)
+    _arrow(d, start, flip, SKY, round(4 * s), 14 * s)
+    _arrow(d, flip, cancel, GOLD, round(4 * s), 14 * s)
+    for (px, py), color in ((start, SKY), (flip, SKY)):  # points de passage
+        d.ellipse([px - 4 * s, py - 4 * s, px + 4 * s, py + 4 * s], fill=color)
     t = text_img([(g["labels"][2], font(round(11 * s)), SKY, 0)], shear=0)
     tx = start[0] + 10 * s if side < 0 else start[0] - 10 * s - t.width  # du cote ou part le decalage
     img.alpha_composite(t, (round(min(max(tx, 4 * s), W - t.width - 4 * s)), round(start[1] - t.height / 2)))
     for (px, py), label, color in ((flip, g["labels"][0], SKY), (cancel, g["labels"][1], GOLD)):
         t = text_img([(label, font(round(11 * s)), color, 0)], shear=0)
-        right = px >= cx if label == g["labels"][0] else side < 0  # cancel : du cote ou l'arc n'arrive pas
+        right = px >= cx if label == g["labels"][0] else side > 0  # cancel : du cote du flip
         tx = px + (10 * s if right else -10 * s - t.width)
         img.alpha_composite(t, (round(min(max(tx, 4 * s), W - t.width - 4 * s)), round(py - t.height / 2)))
 
@@ -1437,8 +1484,35 @@ def render_stick_guide(g, k):
     d.ellipse([px - 8 * s, py - 8 * s, px + 8 * s, py + 8 * s], fill=FG, outline=(11, 19, 34, 255),
               width=round(2 * s))
 
+    # Timing du 1er saut : barre qui se remplit depuis le depart, zones de SpeedFlipTrainer (vert 55-70 ticks,
+    # orange 50-75), repere au moment du saut. Permet d'anticiper le saut au lieu d'y reagir
+    bar = g.get("jump_bar") or {}
+    y = cy + r + 14 * s
+    t = text_img([(g["jump_label"], font(round(11 * s), SEMI), MUTED, 0)], shear=0)
+    img.alpha_composite(t, (round(16 * s), round(y)))
+    if bar.get("jump") is not None:
+        t = text_img([(bar["jump_text"], font(round(12 * s), SEMI),
+                       {"ok": GREEN, "warn": AMBER}.get(bar["note"], RED), 0)], shear=0)
+        img.alpha_composite(t, (round(W - 16 * s - t.width), round(y - 1 * s)))
+    bx0, bx1, by0, by1 = 16 * s, W - 16 * s, y + 18 * s, y + 28 * s
+    span = 0.8  # secondes depuis le depart
+
+    def bx(sec):
+        return bx0 + (bx1 - bx0) * min(max(sec, 0), span) / span
+
+    d.rounded_rectangle([bx0, by0, bx1, by1], radius=5 * s, fill=(30, 42, 68, 255))
+    d.rectangle([bx(50 / 120), by0, bx(75 / 120), by1], fill=_scaled(AMBER, 0.55, 255))
+    d.rectangle([bx(55 / 120), by0, bx(70 / 120), by1], fill=_scaled(GREEN, 0.7, 255))
+    if bar.get("t") is not None:  # temps ecoule depuis le depart, en direct
+        d.rectangle([bx0, by1 + 2 * s, bx(bar["t"]), by1 + 5 * s], fill=FG)  # sous la barre : zones visibles
+        d.line([bx(bar["t"]), by0 - 3 * s, bx(bar["t"]), by1 + 3 * s], fill=FG, width=max(1, round(2 * s)))
+    if bar.get("jump") is not None:
+        jx = bx(bar["jump"])
+        d.polygon([(jx, by0 - 1 * s), (jx - 5 * s, by0 - 8 * s), (jx + 5 * s, by0 - 8 * s)], fill=FG)
+        d.line([jx, by0, jx, by1], fill=FG, width=max(1, round(3 * s)))
+
     # Etapes : faites en vert, en cours en bleu
-    y = cy + r + 16 * s
+    y = by1 + 14 * s
     for i, text in enumerate(g["steps"]):
         color = GREEN if i < g["step"] else SKY if i == g["step"] else MUTED
         t = text_img([(f"{i + 1}. {text}", font(round(12 * s), SEMI), color, 0)], shear=0)

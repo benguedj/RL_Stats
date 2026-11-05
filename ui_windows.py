@@ -294,6 +294,11 @@ class SettingsWindow:
         tk.Label(f, text=T("s_obs_hint"), bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(
             fill="x", padx=30, pady=(0, 6))
 
+        row = _row(f, T("s_pad"))
+        _button(row, T("s_pad_button"), self.app.open_pad).pack(side="right")
+        tk.Label(f, text=T("s_pad_hint"), bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(
+            fill="x", padx=12, pady=(0, 6))
+
         _check(f, T("s_tray"), self.var("tray", tk.BooleanVar),
                lambda: self.changed("tray")).pack(fill="x", padx=12, pady=(10, 2))
         _check(f, T("s_taskbar"), self.var("taskbar", tk.BooleanVar),

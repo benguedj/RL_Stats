@@ -43,7 +43,8 @@ import synth  # noqa: E402
 from history import History  # noqa: E402
 from i18n import T  # noqa: E402
 from obs_server import OBS_K, OBS_URL, ObsServer  # noqa: E402
-from training import PadSetup, TrainingWindow, flip_card_info, seconds_text  # noqa: E402
+from training import (PadSetup, TrainingWindow, attempt_time_text, flip_card_info, flip_cells,  # noqa: E402
+                      kick_gap_text, kick_grade, kick_records, seconds_text)
 from ui_windows import WARN, HistoryWindow, SettingsWindow, hex_to_rgb, show_notice, show_welcome  # noqa: E402
 
 if getattr(sys, "frozen", False):
@@ -62,7 +63,7 @@ DATA_FILE = os.path.join(DATA_DIR, "stats.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "matches.json")
 LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
 
-APP_VERSION = "1.7.1"
+APP_VERSION = "1.8.0"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
 RESUME_HOURS = 2  # une session relancee dans ce delai reprend la ou elle en etait
@@ -806,9 +807,9 @@ class Store:
         "goal_alert": True, "session_timer": True,
         "obs": False, "hotkeys": True, "tray": True, "taskbar": True,
         "auto_hide": True, "resume_session": True, "check_updates": True, "tilt_alert": False,
-        "kickoff_alert": False,  # chrono de chaque engagement sur l'overlay (fenetre Entrainement)
-        "kick_targets": {"diag": 2.05, "offc": 2.3, "back": 2.6},  # objectif du defi par position (secondes)
+        "kick_card": True,  # petite carte apres chaque engagement en match (fenetre Entrainement)
         "drill": [],  # essais du defi d'engagements : {"t", "spawn", "dt", "miss", "exact", "flip"}
+        "kick_records": {},  # record par position {spawn: {"dt", "t"}}, garde meme si on efface les essais
         "pad": dict(pad.DEFAULT_BINDINGS),  # boutons de la manette (analyse du speed flip)
         "pad_checked": False,  # boutons indiques par le joueur (sinon : ceux par defaut, a lui faire regler)
         "stick_guide": False,  # guide du speed flip sur l'overlay (menu de l'overlay)
@@ -1744,7 +1745,7 @@ class Overlay:
         self.q = queue.Queue()
         self.tracker = MatchTracker(self.store, self.add_result, self.on_match_start, self.on_goal, self.on_kickoff)
         self.pad = pad.Pad()  # manette : inputs de chaque essai du defi d'engagements
-        self.pad_popup = None  # fenetre "Indique tes boutons" (training.PadSetup)
+        self.pad_popup = None  # fenetre "Boutons de la manette" (training.PadSetup)
         self.pad_asked = False  # fenetre deja ouverte toute seule pendant cette session
         # Entrainement personnalise en cours : pack d'engagements (True), autre pack (False) ou pas encore su
         self.in_custom, self.kick_training = False, None
@@ -1953,6 +1954,7 @@ class Overlay:
             self.training_window.win.lift()
         else:
             self.training_window = TrainingWindow(self)
+            self.check_pad_setup(quiet=False)
 
     # --- Position -----------------------------------------------------------
 
@@ -2426,6 +2428,7 @@ class Overlay:
             pm.item(T("m_history"), self.open_history, pm.I_HISTORY),
             pm.item(T("m_training"), self.open_training, pm.I_TRAIN),
             pm.choice(T("m_guide"), self.guide_visible(), self.toggle_stick_guide),
+            pm.item(T("m_pad"), self.open_pad, pm.I_PAD),
             pm.item(T("m_settings"), self.open_settings, pm.I_SETTINGS),
             pm.item(T("m_last_summary"), lambda: self.show_summary(), pm.I_SUMMARY),
             pm.item(T("m_share"), self.share_card, pm.I_COPY),
@@ -2660,11 +2663,33 @@ class Overlay:
                 self.add_drill(kick)
             elif self.in_custom and self.kick_training is None:
                 self.kick_training = False  # premier tir sans engagement : pack de tirs, pas de guide
-        elif self.store["kickoff_alert"] and who != "mate" and not self.tracker.finished:
-            self.show_banner(T("kick_me" if who == "me" else "kick_opp", s=seconds_text(kick["dt"])),
-                             designs.GREEN if who == "me" else designs.RED, None, 3)
+        elif self.store["kick_card"] and who in ("me", "opp") and not self.tracker.finished:
+            self.show_kick_pill(kick)
         if self.training_window:
             self.training_window.refresh()
+
+    def show_kick_pill(self, kick):
+        """Engagement en match : petite carte discrete a cote de l'overlay (4 s). Mon temps et sa couleur
+        quand je touche le premier (avec l'angle et le cancel si une manette est branchee), sinon le temps de
+        l'adversaire. Pas enregistree dans le defi : en match on part avec 33 de boost."""
+        if self.hidden or self.auto_hidden:
+            return
+        attempt = {"dt": round(kick["dt"], 3), "spawn": kick["spawn"] or "", "miss": False,
+                   "exact": kick["exact"]}
+        info = {"label": T("kick_pill_opp"), "time": attempt_time_text(attempt), "text": "", "state": "opp",
+                "cells": []}
+        if kick["who"] == "me":
+            info["label"], info["state"] = T("kick_pill_me"), "me"
+            if attempt["spawn"]:
+                info.update(label=T("tr_" + attempt["spawn"]).upper(), state=kick_grade(attempt),
+                            text=kick_gap_text(attempt))
+            if self.pad.connected:
+                end = kick["go"] + kick["dt"]
+                flip = pad.analyse(self.pad.window(kick["go"] - 0.3, end), kick["go"], end, self.store["pad"])
+                if flip and flip["flip"] is not None:
+                    info["cells"] = [(label.upper(), value, note) for label, value, note in flip_cells(flip)[3:5]]
+        img = designs.render_kick_pill(info, self.design_k())
+        self.card.show(img, *self.beside_overlay(img), 4)
 
     def add_drill(self, kick):
         """Essai du defi d'engagements : enregistre, et bandeau compare a l'objectif de la position."""
@@ -2676,34 +2701,54 @@ class Overlay:
             if flip:
                 self.last_flip = dict(flip, t=attempt["t"])
                 attempt["flip"] = {k: v for k, v in flip.items() if k not in ("path", "tl")}
+        before = kick_records(self.store).get(attempt["spawn"])
         self.store["drill"] = (self.store["drill"] + [attempt])[-500:]
+        self.store["kick_records"] = kick_records(self.store)
+        # Nouveau record : un temps exact plus rapide que l'ancien (pas le tout premier essai de la position)
+        record = bool(before and attempt["spawn"] and not attempt["miss"] and attempt["exact"]
+                      and attempt["dt"] < before["dt"])
         if self.in_custom:
             self.kick_training = True
-        if self.pad.connected and not self.pad_ready() and not self.pad_asked:
-            # Boutons par defaut, rarement ceux du joueur : on les demande (sans prendre le focus du jeu)
-            self.pad_asked = True
-            self.ask_pad_setup(quiet=True)
-        if kick["miss"]:
-            self.show_banner(T("drill_miss", s=seconds_text(kick["dt"])), designs.AMBER, None, 2.5)
-        else:
-            diff = kick["dt"] - self.store["kick_targets"][kick["spawn"]]
-            diff_text = f"{diff:+.2f}".replace(".", "," if i18n.lang() == "fr" else ".")
-            self.show_banner(T("drill_hit", spawn=T("tr_" + kick["spawn"]).upper(), s=seconds_text(kick["dt"]),
-                               d=diff_text), designs.GREEN if diff <= 0 else designs.RED, None, 2.5)
+        self.check_pad_setup(quiet=True)
+        gain = before["dt"] - attempt["dt"] if record else None
         if attempt.get("flip") and not self.hidden:
-            img = designs.render_flip_card(flip_card_info(attempt, self.store["kick_targets"]), self.design_k())
+            # La carte dit deja tout (position, temps, couleur, record) : pas de bandeau en plus
+            img = designs.render_flip_card(flip_card_info(attempt, gain), self.design_k())
             self.card.show(img, *self.beside_overlay(img), 9)
+        elif kick["miss"]:
+            self.show_banner(T("drill_miss", s=attempt_time_text(attempt)), designs.AMBER, None, 2.5)
+        else:
+            color = {"perfect": designs.GOLD, "good": designs.GREEN, "close": designs.AMBER}.get(
+                kick_grade(attempt), designs.RED)
+            gap = kick_gap_text(attempt)
+            if record:
+                gap = T("dr_record_banner", d=seconds_text(gain)) + " · " + gap
+            self.show_banner(T("drill_hit", spawn=T("tr_" + kick["spawn"]).upper(), s=seconds_text(kick["dt"]),
+                               d=gap), color, None, 3.5 if record else 2.5)
 
     def pad_ready(self):
         """Boutons de la manette indiques par le joueur (ou deja changes avant l'assistant)."""
         return self.store["pad_checked"] or self.store["pad"] != pad.DEFAULT_BINDINGS
 
+    def check_pad_setup(self, quiet):
+        """Boutons jamais indiques (ceux par defaut, rarement ceux du joueur) : fenetre "Indique tes boutons",
+        une fois par session. Ouverture de la fenetre Entrainement, entree en entrainement personnalise ou
+        premier essai d'engagement. quiet : en jeu, sans prendre le focus."""
+        if self.pad.connected and not self.pad_ready() and not self.pad_asked:
+            self.pad_asked = True
+            self.ask_pad_setup(quiet)
+
     def ask_pad_setup(self, quiet=False):
-        """Fenetre "Indique tes boutons". quiet : ouverte toute seule en jeu, sans lui prendre le focus."""
+        """Fenetre Boutons de la manette. quiet : ouverte toute seule en jeu, sans lui prendre le focus."""
         if self.pad_popup:
             self.pad_popup.win.lift()
-        elif self.pad.connected:
+        else:
             self.pad_popup = PadSetup(self, quiet)
+
+    def open_pad(self):
+        """Fenetre Boutons de la manette (menu, Parametres, fenetre Entrainement)."""
+        self.pad_asked = True  # deja vue : pas besoin de la rouvrir toute seule
+        self.ask_pad_setup()
 
     def guide_visible(self):
         """Guide du speed flip affiche : choisi par le joueur, ou tout seul en entrainement d'engagements. Le jeu
@@ -2737,6 +2782,8 @@ class Overlay:
         custom = tracker.playlist == CUSTOM_TRAINING and not tracker.guid
         if custom != self.in_custom:  # entree ou sortie de l'entrainement personnalise
             self.in_custom, self.kick_training, self.guide_dismissed, self.guide_told = custom, None, False, False
+            if custom:
+                self.check_pad_setup(quiet=True)
         visible = self.guide_visible() and self.pad.connected and not self.hidden and not self.auto_hidden
         if visible and not self.store["stick_guide"] and not self.guide_told:
             self.guide_told = True
@@ -2769,7 +2816,12 @@ class Overlay:
             step = 5 if last.get("cancel") is not None else 3 if last.get("flip") is not None else 0
         stick = (round(recent[-1][2], 2), round(recent[-1][3], 2))
         trail = tuple((round(s[2], 2), round(s[3], 2)) for s in recent)
-        key = (stick, trail, step, side, id(last), i18n.lang())
+        # Barre du 1er saut : temps depuis le depart (en direct, pour anticiper) et moment du saut
+        jump = (flip or {}).get("jump") if trying else last.get("jump") if last else None
+        elapsed = round(min(now - kick["go"], 0.8), 2) if trying else None
+        bar = {"t": elapsed, "jump": jump, "note": pad.grade("jump", jump),
+               "jump_text": seconds_text(jump) if jump is not None else ""}
+        key = (stick, trail, step, side, id(last), i18n.lang(), elapsed, jump)
         if key == self._guide_key:
             return
         self._guide_key = key
@@ -2779,7 +2831,8 @@ class Overlay:
         img = designs.render_stick_guide({
             "title": T("sg_title"), "side": side, "stick": stick, "trail": trail, "step": step, "steps": steps,
             "done": [(x, y) for _, x, y in last["path"]] if last else None,
-            "labels": (T("pf_flip_label"), T("pf_cancel").upper(), T("sg_tap_label"))}, self.design_k())
+            "labels": (T("pf_flip_label"), T("pf_cancel").upper(), T("sg_tap_label")),
+            "jump_label": T("sg_jump_bar"), "jump_bar": bar}, self.design_k())
         self.guide_layer.show(img, *self.guide_position(img))
 
     def guide_moved(self, x, y):

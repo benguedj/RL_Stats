@@ -30,6 +30,49 @@ BIG_PADS = [(-3072, -4096), (3072, -4096), (-3584, 0), (3584, 0)]
 SPAWN_KEYS = ("diag", "offc", "back")  # codes du tracker (kick_spawn) ; textes : T("tr_" + code)
 KICKOFF_PACK = "A503-264C-A7EB-D282"  # pack d'entrainement personnalise d'engagements conseille
 PAD_ACTIONS = ("jump", "boost", "roll", "roll_l", "roll_r")  # boutons a assigner ; textes : T("pad_" + action)
+# Speed flip parfait : temps du GO au contact, par position. Estime avec la physique du jeu (constantes de RLBot :
+# boost 991.7 uu/s2, accelerateur 1600 -> 0 a 1410 uu/s, impulsion du flip 500 uu/s) : boost seul en ligne droite
+# 2.04 / 2.29 / 2.63 s, speed flip ideal 1.89 / 2.13 / 2.47 s. Parfait : a 0.06 s de l'ideal (precision de la
+# mesure, trajectoire jamais tout a fait droite). Bon : plus rapide que sans flip (le flip fait gagner du temps).
+# Presque : jusqu'a 0.1 s plus lent que sans flip. Lent : au-dela
+PERFECT = {"diag": 1.95, "offc": 2.20, "back": 2.53}
+NO_FLIP = {"diag": 2.05, "offc": 2.30, "back": 2.60}
+CLOSE = 0.10
+GRADE_TEXTS = {"perfect": "dr_perfect", "good": "dr_good", "close": "dr_close", "slow": "dr_slow"}
+PERFECT_COLOR = "#facc15"  # or, comme le bandeau et la carte (designs.GOLD)
+REF_COLOR = "#cbd5e1"  # geste parfait sur la frise (pointilles)
+
+
+def kick_grade(attempt):
+    """"perfect", "good", "close" ou "slow" pour un essai touche (seuils fixes par position)."""
+    dt, spawn = attempt["dt"], attempt["spawn"]
+    if dt <= PERFECT[spawn]:
+        return "perfect"
+    if dt <= NO_FLIP[spawn]:
+        return "good"
+    return "close" if dt <= NO_FLIP[spawn] + CLOSE else "slow"
+
+
+def kick_records(store):
+    """Record de chaque position {spawn: {"dt", "t"}} : ceux enregistres (gardes meme si on efface les essais),
+    completes par les essais encore dans l'historique. Seuls les temps exacts comptent (pas les "≈")."""
+    records = {k: dict(v) for k, v in store["kick_records"].items()}
+    for a in store["drill"]:
+        if a["miss"] or not a.get("exact", True) or a["spawn"] not in PERFECT:
+            continue
+        if a["spawn"] not in records or a["dt"] < records[a["spawn"]]["dt"]:
+            records[a["spawn"]] = {"dt": a["dt"], "t": a["t"]}
+    return records
+
+
+def kick_gap_text(attempt):
+    """Texte a cote du temps : parfait, ecart avec le parfait (bon), ou avec le temps sans flip (presque, lent)."""
+    grade, spawn = kick_grade(attempt), attempt["spawn"]
+    if grade == "perfect":
+        return T("gap_perfect")
+    if grade == "good":
+        return T("gap_to_perfect", d=seconds_text(attempt["dt"] - PERFECT[spawn]))
+    return T("gap_no_flip", d=seconds_text(attempt["dt"] - NO_FLIP[spawn]))
 
 
 def diff_text(value):
@@ -135,18 +178,28 @@ def reference_flip(side):
               for i in range(7)]
     stick += [edge(flip + (cancel - flip) * i / 6, 30 * side + 150 * side * i / 6) for i in range(1, 7)]
     return {"t1": 1.0, "stick": stick, "jump": [(j1, j1 + 0.042), (flip, 1.0)], "roll": [(flip + 0.033, 1.0)],
-            "boost": [(0.0, 1.0)], "j1": j1}
+            "boost": [(0.0, 1.0)], "j1": j1, "marks": [(flip, "flip"), (cancel, "cancel")]}
 
 
-def flip_card_info(attempt, targets):
-    """Textes de la carte affichee sur l'overlay apres un essai du defi (designs.render_flip_card)."""
+def attempt_time_text(attempt):
+    """Temps d'un essai : "> 2,00 s" si le tir s'est arrete avant le contact, "≈ 1,98 s" si le contact est
+    deduit (precis a 0,05 s pres), sinon le temps exact."""
     if attempt["miss"]:
-        title, state, diff = T("dr_miss").upper(), "miss", ""
+        return "> " + seconds_text(attempt["dt"])
+    return ("" if attempt.get("exact", True) else "≈ ") + seconds_text(attempt["dt"])
+
+
+def flip_card_info(attempt, record=None):
+    """Textes de la carte affichee sur l'overlay apres un essai du defi (designs.render_flip_card)."""
+    if attempt["miss"]:  # temps du tir ecoule : "> 2,00 s", pas un vrai temps de contact
+        title, state, diff = T("dr_miss").upper(), "miss", T("gap_miss")
     else:
-        gap = attempt["dt"] - targets[attempt["spawn"]]
-        title, state, diff = T("tr_" + attempt["spawn"]).upper(), "ok" if gap <= 0 else "slow", diff_text(gap)
+        title, state, diff = T("tr_" + attempt["spawn"]).upper(), kick_grade(attempt), kick_gap_text(attempt)
+        if record is not None:  # record battu de `record` secondes
+            gain = f"{record:.2f}".replace(".", "," if lang() == "fr" else ".")  # tiret simple, sans unite (titre en majuscules)
+            title += " · " + T("dr_record_card", d=gain).upper()
     cells = flip_cells(attempt["flip"])
-    return {"title": title, "time": seconds_text(attempt["dt"]), "diff": diff, "state": state,
+    return {"title": title, "time": attempt_time_text(attempt), "diff": diff, "state": state,
             # Coup de stick, delai du flip, air roll, boost : le saut, l'angle et le cancel sont en jauges
             "cells": [(label.upper(), value, note) for label, value, note in (cells[i] for i in (0, 2, 5, 6))],
             "gauges": flip_gauges(attempt["flip"]), "advices": flip_advices(attempt["flip"])}
@@ -442,10 +495,10 @@ You leave as usual but reach the ball a split second after the opponent, so you 
 DRILL_HELP = ("""## Comment s'entraîner
 1. Entraînement > Entraînement personnalisé : lance un pack d'engagements (voiture sur les vraies positions de départ, ballon au centre).
 2. Le chrono part à ton premier mouvement et s'arrête au contact avec le ballon. L'app reconnaît la position de départ à la distance que ta voiture a parcourue.
-3. Après chaque tir, l'overlay affiche ton temps et l'écart avec l'objectif : vert si tu es dessous, rouge sinon.
+3. Après chaque tir, l'overlay affiche ton temps et sa couleur : or si ton speed flip est parfait, vert s'il te fait gagner du temps, orange si tu es presque au temps sans flip, rouge si tu es plus lent.
 - Ça marche aussi en match privé ou d'exhibition contre des bots : le chrono part alors au GO.
 > Les packs avec une limite de temps (2 s pour celui de Musty) arrêtent le tir avant le contact s'il est trop lent : l'app le compte comme « pas touché ».
-- Les objectifs par défaut sont des estimations pour un engagement rapide avec speed flip. Règle-les sur ton niveau, puis baisse-les petit à petit.
+- Le vert commence au temps qu'on met en boostant tout droit, sans flip : au-dessus, ton flip te fait perdre du temps. Un speed flip parfait (en or) est environ 0,1 s plus rapide.
 ## Lire la frise de tes inputs
 Sous ton dernier speed flip (et sur la carte de l'overlay), chaque ligne montre un input dans le temps, du départ au cancel. Un bon speed flip vers la gauche ressemble à ça, de gauche à droite :
 1. Boost : la barre orange commence à 0 et ne s'arrête plus.
@@ -454,14 +507,14 @@ Sous ton dernier speed flip (et sur la carte de l'overlay), chaque ligne montre 
 4. Au trait FLIP, le stick G / D descend vers la gauche et le stick av. / arr. monte : c'est le flip en diagonale.
 5. Moins de 60 ms après (trait CANCEL), le stick av. / arr. arrive tout en bas et y reste, pendant que le stick G / D passe par la gauche.
 6. Air roll (gauche, côté du flip) : la barre violette commence environ 30 ms après le trait FLIP et dure jusqu'à l'atterrissage.
-> Compare ta frise à cette liste : le premier point qui ne colle pas est celui à travailler. Les conseils sous les mesures le disent aussi, du plus important au moins important.""",
+> Le geste parfait est dessiné en pointillés clairs sur ta frise : le premier input qui s'en écarte est celui à travailler. Les conseils sous les mesures le disent aussi, du plus important au moins important.""",
               """## How to practice
 1. Training > Custom training: load a kickoff pack (car on the real kickoff spawns, ball in the center).
 2. The timer starts on your first movement and stops when you touch the ball. The app recognizes your spawn from the distance your car traveled.
-3. After each shot, the overlay shows your time and the gap to your target: green when you beat it, red otherwise.
+3. After each shot, the overlay shows your time and its color: gold when your speed flip is perfect, green when it saves time, orange when you are close to the no-flip time, red when you are slower.
 - It also works in private matches or exhibitions against bots: the timer then starts at GO.
 > Packs with a time limit (2 s in Musty's pack) end the shot before contact if you are too slow: the app counts it as "missed".
-- The default targets are estimates for a fast speed flip kickoff. Set them to your level, then lower them bit by bit.
+- Green starts at the time it takes to boost straight without a flip: above it, your flip loses time. A perfect speed flip (in gold) is about 0.1 s faster.
 ## Reading your input timeline
 Under your latest speed flip (and on the overlay card), each line shows one input over time, from the start to the cancel. A good speed flip to the left looks like this, from left to right:
 1. Boost: the orange bar starts at 0 and never stops.
@@ -470,7 +523,7 @@ Under your latest speed flip (and on the overlay card), each line shows one inpu
 4. At the FLIP line, stick L / R drops to the left and stick fwd / back goes up: that is the diagonal flip.
 5. Less than 60 ms later (CANCEL line), stick fwd / back reaches the bottom and stays there, while stick L / R goes through the left.
 6. Air roll (left, the flip side): the purple bar starts about 30 ms after the FLIP line and lasts until you land.
-> Compare your timeline to this list: the first point that does not match is the one to work on. The tips under the measures say it too, most important first.""")
+> The perfect motion is drawn in light dotted lines on your timeline: the first input that drifts from it is the one to work on. The tips under the measures say it too, most important first.""")
 
 
 # --------------------------------------------------------------------------
@@ -478,52 +531,79 @@ Under your latest speed flip (and on the overlay card), each line shows one inpu
 # --------------------------------------------------------------------------
 
 class PadSetup:
-    """Fenetre "Indique tes boutons" : demande les boutons de la manette un par un. S'ouvre toute seule au
-    premier essai d'engagement si le joueur ne les a jamais indiques (quiet : sans prendre le focus du jeu, la
-    manette est lue quand meme), ou depuis la page Defi engagements."""
+    """Fenetre "Boutons de la manette" : un bouton Changer par action (on appuie ensuite sur le bouton de la
+    manette), Tout regler (les actions une par une), Reinitialiser. Ouverte depuis le menu, les Parametres ou la
+    fenetre Entrainement, et toute seule quand les boutons n'ont jamais ete indiques (quiet : en jeu, sans
+    prendre le focus ; la manette est lue quand meme et tout se regle d'affilee, sans souris)."""
 
     WAIT = 8  # secondes pour appuyer sur chaque bouton
 
     def __init__(self, app, quiet=False):
         self.app = app
-        self.found = dict(app.store["pad"])
-        self.i = 0
+        self.quiet = quiet
+        self.capturing = None  # action dont on attend le bouton
+        self.queue = []  # actions restantes de "Tout regler"
+        self.all_done = False  # "Tout regler" lance : en jeu (quiet), la fenetre se ferme a la fin
+        self.gen = 0  # capture en cours : les anciennes boucles s'arretent
+        self.connected = app.pad.connected
         self.win = tk.Toplevel(app.root)
         self.win.withdraw()
         self.win.overrideredirect(True)
         self.win.attributes("-topmost", True)
         self.win.configure(bg=WARN)
-        body = tk.Frame(self.win, bg=PANEL)
-        body.pack(fill="both", expand=True, padx=2, pady=2)
-        tk.Label(body, text=T("pad_setup_title"), bg=PANEL, fg=WARN, font=TITLE_FONT, anchor="w").pack(
-            fill="x", padx=18, pady=(14, 4))
-        tk.Label(body, text=T("pad_setup_text"), bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w",
-                 justify="left", wraplength=440).pack(fill="x", padx=18)
-        self.step = tk.Label(body, bg=PANEL, fg=FG, font=("Bahnschrift SemiBold", 17))
-        self.step.pack(pady=(14, 2))
-        tk.Label(body, text=T("pad_setup_skip"), bg=PANEL, fg=MUTED, font=("Segoe UI", 9),
-                 wraplength=440).pack(padx=18)
-        grid = tk.Frame(body, bg=PANEL)
-        grid.pack(pady=(10, 4))
-        self.cells = {}
-        for i, action in enumerate(PAD_ACTIONS):
-            row, col = divmod(i, 2)
-            name = tk.Label(grid, text=T("pad_" + action), bg=PANEL, fg=MUTED, font=BODY_FONT, width=15, anchor="w")
-            name.grid(row=row, column=2 * col, sticky="w", padx=(10, 0), pady=1)
-            value = tk.Label(grid, bg=PANEL, fg=FG, font=("Bahnschrift SemiBold", 11), width=5, anchor="w")
-            value.grid(row=row, column=2 * col + 1, sticky="w")
-            self.cells[action] = (name, value)
-        buttons = tk.Frame(body, bg=PANEL)
-        buttons.pack(fill="x", padx=18, pady=(8, 14))
-        _button(buttons, T("pad_setup_later"), self.close, bg=EDGE).pack(side="right")
-        _button(buttons, T("pad_setup_keep"), self.keep, bg=BG).pack(side="right", padx=(0, 8))
+        self.body = tk.Frame(self.win, bg=PANEL)
+        self.body.pack(fill="both", expand=True, padx=2, pady=2)
+        self.build()
         self._show(quiet)
-        self.next()
+        if quiet:
+            self.capture_all()
+        self.watch()
+
+    def build(self):
+        for child in self.body.winfo_children():
+            child.destroy()
+        body, connected = self.body, self.app.pad.connected
+        title = T("pad_title" if self.app.pad_ready() else "pad_setup_title")
+        tk.Label(body, text=title, bg=PANEL, fg=WARN, font=TITLE_FONT, anchor="w").pack(fill="x", padx=18,
+                                                                                         pady=(14, 4))
+        tk.Label(body, text=T("pad_setup_text"), bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w",
+                 justify="left", wraplength=460).pack(fill="x", padx=18)
+        tk.Label(body, text=T("pad_ok" if connected else "pad_missing"), bg=PANEL, fg=OK if connected else WARN,
+                 font=("Segoe UI", 9), anchor="w", justify="left", wraplength=460).pack(fill="x", padx=18,
+                                                                                       pady=(8, 0))
+        grid = tk.Frame(body, bg=PANEL)
+        grid.pack(fill="x", padx=14, pady=(10, 2))
+        grid.columnconfigure(1, weight=1)
+        bindings = self.app.store["pad"]
+        for row, action in enumerate(PAD_ACTIONS):
+            waiting = self.capturing == action
+            tk.Label(grid, text=T("pad_" + action), bg=PANEL, fg=WARN if waiting else FG, font=BODY_FONT,
+                     width=16, anchor="w").grid(row=row, column=0, sticky="w", padx=4, pady=2)
+            tk.Label(grid, text=T("pad_press") if waiting else bindings.get(action) or "–", bg=PANEL,
+                     fg=WARN if waiting else FG, font=("Bahnschrift SemiBold", 11),
+                     anchor="w").grid(row=row, column=1, sticky="w")
+            if connected and not waiting:
+                _button(grid, T("pad_change"), lambda a=action: self.capture(a), bg=EDGE).grid(
+                    row=row, column=2, sticky="e", padx=4, pady=2)
+        tk.Label(body, text=T("pad_setup_skip"), bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w",
+                 justify="left", wraplength=460).pack(fill="x", padx=18, pady=(4, 0))
+        step = ""
+        if self.capturing and self.all_done:  # "Tout regler" : ou on en est
+            step = T("pad_setup_step", i=PAD_ACTIONS.index(self.capturing) + 1, n=len(PAD_ACTIONS),
+                     action=T("pad_" + self.capturing))
+        self.step = tk.Label(body, text=step, bg=PANEL, fg=WARN if step else OK, font=("Bahnschrift SemiBold", 13))
+        self.step.pack(pady=(4, 0))
+        buttons = tk.Frame(body, bg=PANEL)
+        buttons.pack(fill="x", padx=18, pady=(6, 14))
+        _button(buttons, T("pad_ok_button"), self.done, bg=EDGE).pack(side="right")
+        if connected:
+            _button(buttons, T("pad_setup_start"), self.capture_all, bg=EDGE).pack(side="left")
+        _button(buttons, T("pad_reset"), self.reset, bg=BG).pack(side="left", padx=(8, 0))
 
     def _show(self, quiet):
         """En haut du jeu, centree. quiet : affichee sans devenir la fenetre active (le jeu garde le focus)."""
         self.win.update_idletasks()
-        w, h = 480, self.win.winfo_reqheight()
+        w, h = 520, self.win.winfo_reqheight()
         vx, vy, vw, vh = self.app.viewport
         self.win.geometry(f"{w}x{h}+{vx + (vw - w) // 2}+{vy + vh // 6}")
         if quiet:
@@ -537,49 +617,92 @@ class PadSetup:
             except (AttributeError, OSError):
                 pass
         self.win.deiconify()
+        self.win.lift()
 
-    def next(self):
-        """Bouton suivant a demander, ou fin."""
-        for i, action in enumerate(PAD_ACTIONS):
-            name, value = self.cells[action]
-            name.configure(fg=WARN if i == self.i else MUTED)
-            value.configure(text=self.found.get(action) or "–", fg=WARN if i == self.i else FG)
-        if self.i >= len(PAD_ACTIONS):
-            self.app.set_option("pad", self.found)
-            self.app.set_option("pad_checked", True)
-            self.step.configure(text=T("pad_setup_done"), fg=OK)
-            if self.app.training_window:
-                self.app.training_window.show()
-            self.win.after(1500, self.close)
-            return
-        self.step.configure(text=T("pad_setup_step", i=self.i + 1, n=len(PAD_ACTIONS),
-                                   action=T("pad_" + PAD_ACTIONS[self.i])))
-        self.deadline = time_now() + self.WAIT
-        self.before = self.app.pad.held()  # un bouton deja enfonce ne compte pas : il faut un nouvel appui
-        self.win.after(30, self.poll)
-
-    def poll(self):
+    def refresh(self):
+        """Reconstruit le contenu, hauteur ajustee."""
         if not self.win.winfo_exists():
             return
-        held = self.app.pad.held()
-        new = held - self.before
-        if new:
-            pressed = sorted(new)[0]
-            self.found[PAD_ACTIONS[self.i]] = "" if pressed == "Back" else pressed
-        if new or time_now() > self.deadline:
-            self.i += 1
-            self.next()
-            return
-        self.before &= held
-        self.win.after(30, self.poll)
+        self.build()
+        self.win.update_idletasks()
+        x, y = self.win.winfo_x(), self.win.winfo_y()
+        self.win.geometry(f"520x{self.win.winfo_reqheight()}+{x}+{y}")
 
-    def keep(self):
+    def watch(self):
+        """Manette branchee ou debranchee pendant que la fenetre est ouverte."""
+        if not self.win.winfo_exists():
+            return
+        if self.app.pad.connected != self.connected:
+            self.connected = self.app.pad.connected
+            self.refresh()
+        self.win.after(500, self.watch)
+
+    def capture(self, action):
+        """Attend le prochain bouton presse pour `action` (8 s ; Back / View : aucun ; sans appui : garde)."""
+        if not self.app.pad.connected:
+            return
+        self.gen += 1
+        self.capturing = action
+        self.refresh()
+        gen, deadline, before = self.gen, time_now() + self.WAIT, self.app.pad.held()
+        self.win.after(30, lambda: self.poll(gen, action, deadline, before))
+
+    def poll(self, gen, action, deadline, before):
+        if gen != self.gen or not self.win.winfo_exists():
+            return
+        held = self.app.pad.held()
+        new = held - before  # un bouton deja enfonce ne compte pas : il faut un nouvel appui
+        if not (new or time_now() > deadline):
+            self.win.after(30, lambda: self.poll(gen, action, deadline, before & held))
+            return
+        if new:
+            bindings = dict(self.app.store["pad"])
+            pressed = sorted(new)[0]
+            bindings[action] = "" if pressed == "Back" else pressed
+            self.app.set_option("pad", bindings)
+        self.capturing = None
+        if self.queue:
+            self.capture(self.queue.pop(0))
+            return
         self.app.set_option("pad_checked", True)
-        if self.app.training_window:
-            self.app.training_window.show()
+        self._changed()
+        self.refresh()
+        if self.all_done:
+            self.all_done = False
+            self.step.configure(text=T("pad_setup_done"))
+            if self.quiet:
+                self.win.after(1500, self.close)
+
+    def capture_all(self):
+        """Toutes les actions une par une (marche a la manette seule)."""
+        if not self.app.pad.connected:
+            return
+        self.queue = list(PAD_ACTIONS[1:])
+        self.all_done = True
+        self.capture(PAD_ACTIONS[0])
+
+    def reset(self):
+        """Boutons par defaut, puis on les redemande tous."""
+        self.queue, self.capturing, self.all_done = [], None, False
+        self.gen += 1
+        self.app.set_option("pad", dict(pad.DEFAULT_BINDINGS))
+        self.app.set_option("pad_checked", False)
+        self._changed()
+        self.refresh()
+        self.capture_all()
+
+    def done(self):
+        """OK : les boutons affiches sont les bons (meme ceux par defaut)."""
+        self.app.set_option("pad_checked", True)
+        self._changed()
         self.close()
 
+    def _changed(self):
+        if self.app.training_window:
+            self.app.training_window.show()
+
     def close(self):
+        self.gen += 1
         self.app.pad_popup = None
         if self.win.winfo_exists():
             self.win.destroy()
@@ -589,7 +712,6 @@ class TrainingWindow:
     def __init__(self, app):
         self.app = app
         self.page = "kick_drill"
-        self.capturing = None  # action dont on attend le bouton (assignation de la manette)
         self.replay_speed = 0.25  # vitesse de l'animation du stick (dernier essai et reference)
         self.replay_gen = 0  # animation en cours : les anciennes s'arretent quand la page est reconstruite
         self.win = _dark_window(app.root, T("tr_title"), (940, 680), app.viewport)
@@ -855,34 +977,41 @@ class TrainingWindow:
         self._pack_code()
         if self.app.pad.connected and not self.app.pad_ready():
             self._pad_setup()
-        targets, drill = self.app.store["kick_targets"], self.app.store["drill"]
+        drill = self.app.store["drill"]
+        records = kick_records(self.app.store)
         tiles = []
         for spawn in SPAWN_KEYS:
             tries = [a for a in drill if a["spawn"] == spawn]
-            ok = [a for a in tries if a["dt"] <= targets[spawn]]
-            best = min((a["dt"] for a in tries), default=None)
-            tiles.append((T("tr_" + spawn), f"{round(len(ok) * 100 / len(tries))} %" if tries else "–",
-                          T("dr_tile_sub", ok=len(ok), n=len(tries), best=seconds_text(best) if best else "–")))
+            grades = [kick_grade(a) for a in tries]
+            ok = sum(1 for g in grades if g in ("perfect", "good"))
+            best = records[spawn]["dt"] if spawn in records else None
+            tiles.append((T("tr_" + spawn), f"{round(ok * 100 / len(tries))} %" if tries else "–",
+                          T("dr_tile_sub", ok=ok, n=len(tries), best=seconds_text(best) if best else "–",
+                            p=grades.count("perfect"))))
         tiles.append((T("dr_missed"), str(sum(1 for a in drill if a["miss"])), T("dr_missed_sub")))
         self._tiles(tiles)
 
         box = tk.Frame(self.content, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
         box.pack(fill="x", pady=(12, 0))
-        tk.Label(box, text=T("dr_targets"), bg=PANEL, fg=FG, font=BODY_FONT, anchor="w").pack(
-            fill="x", padx=12, pady=(8, 2))
-        row = tk.Frame(box, bg=PANEL)
-        row.pack(fill="x", padx=6, pady=(0, 10))
-        for spawn in SPAWN_KEYS:
-            group = tk.Frame(row, bg=PANEL)
-            group.pack(side="left", padx=(6, 14))
-            tk.Label(group, text=T("tr_" + spawn), bg=PANEL, fg=MUTED, font=BODY_FONT).pack(side="left", padx=(0, 6))
-            for delta, sign in ((-0.05, "\u2212"), (0.05, "+")):
-                button = _button(group, sign, lambda s=spawn, d=delta: self.set_target(s, d), bg=EDGE)
-                button.configure(padx=6)
-                if delta > 0:
-                    tk.Label(group, text=seconds_text(targets[spawn]), bg=PANEL, fg=FG,
-                             font=("Bahnschrift SemiBold", 11), width=7).pack(side="left")
-                button.pack(side="left")
+        tk.Label(box, text=T("dr_levels"), bg=PANEL, fg=FG, font=BODY_FONT, anchor="w").pack(
+            fill="x", padx=12, pady=(8, 4))
+        grid = tk.Frame(box, bg=PANEL)
+        grid.pack(fill="x", padx=12)
+        colors = self.grade_colors()
+        heads = [("", MUTED), (T("dr_perfect"), colors["perfect"]), (T("dr_good"), colors["good"]),
+                 (T("dr_close"), colors["close"]), (T("dr_slow"), colors["slow"])]
+        for col, (text, color) in enumerate(heads):
+            tk.Label(grid, text=text, bg=PANEL, fg=color, font=("Bahnschrift SemiBold", 11), anchor="w").grid(
+                row=0, column=col, sticky="w", padx=(0, 18))
+        for row, spawn in enumerate(SPAWN_KEYS, start=1):
+            no_flip = NO_FLIP[spawn]
+            cells = [T("tr_" + spawn), "≤ " + seconds_text(PERFECT[spawn]), "≤ " + seconds_text(no_flip),
+                     "≤ " + seconds_text(no_flip + CLOSE), "> " + seconds_text(no_flip + CLOSE)]
+            for col, text in enumerate(cells):
+                tk.Label(grid, text=text, bg=PANEL, fg=MUTED if col == 0 else FG, font=BODY_FONT, anchor="w").grid(
+                    row=row, column=col, sticky="w", padx=(0, 18))
+        self._label(box, T("dr_levels_hint"), fg=MUTED, bg=PANEL, font=("Segoe UI", 9), margin=70, padx=12,
+                    pady=(6, 10))
 
         self._last_flip(drill)
         self._pad_box()
@@ -899,10 +1028,11 @@ class TrainingWindow:
             self._label(self.content, T("dr_none"), fg=MUTED)
             return
         win_c, loss_c = self.app.store["win_color"], self.app.store["loss_color"]
+        colors = self.grade_colors()
         rows = []
         for a in recent:
             when = datetime.datetime.fromtimestamp(a["t"]).strftime("%H:%M")
-            time_text = ("" if a.get("exact", True) else "≈ ") + seconds_text(a["dt"])
+            time_text = attempt_time_text(a)
             grade_colors = {"ok": win_c, "warn": WARN, "bad": loss_c, None: FG}
             flip = [(value, grade_colors[note]) for _, value, note in flip_cells(a["flip"])][3:5] \
                 if a.get("flip") else [("–", MUTED)] * 2
@@ -910,10 +1040,11 @@ class TrainingWindow:
                 rows.append([(when, MUTED), ("–", MUTED), (time_text, FG), ("–", MUTED)] + flip
                             + [(T("dr_miss"), WARN)])
                 continue
-            gap = a["dt"] - targets[a["spawn"]]
-            color = win_c if gap <= 0 else loss_c
-            rows.append([(when, MUTED), (T("tr_" + a["spawn"]), FG), (time_text, FG), (diff_text(gap), color)] + flip
-                        + [(T("dr_ok" if gap <= 0 else "dr_slow"), color)])
+            grade = kick_grade(a)
+            color = colors[grade]
+            gap = diff_text(a["dt"] - PERFECT[a["spawn"]])
+            rows.append([(when, MUTED), (T("tr_" + a["spawn"]), FG), (time_text, FG), (gap, color)] + flip
+                        + [(T(GRADE_TEXTS[grade]), color)])
         self._table(("tr_col_time", "dr_col_spawn", "tr_col_dt", "dr_col_diff", "pf_angle", "pf_cancel",
                      "tr_col_result"), rows)
 
@@ -926,6 +1057,8 @@ class TrainingWindow:
         last = self.app.last_flip
         if not last:
             self._label(self.content, T("pf_none"), fg=MUTED)
+            self._replay(None)
+            self._timeline(None)
             return
         box = tk.Frame(self.content, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
         box.pack(fill="x")
@@ -949,7 +1082,7 @@ class TrainingWindow:
             self._label(right, text, bg=PANEL, fg=FG if i == 0 else MUTED, font=("Bahnschrift SemiBold", 11),
                         margin=260, pady=(12 if i == 0 else 0, 2))
         best = sorted((a for a in drill if a.get("flip") and not a["miss"] and a["flip"]["flip"] is not None),
-                      key=lambda a: a["dt"] - self.app.store["kick_targets"][a["spawn"]])[:5]
+                      key=lambda a: a["dt"] - PERFECT[a["spawn"]])[:5]
         if best:
             def mean(key):
                 values = [abs(a["flip"][key]) for a in best if a["flip"][key] is not None]
@@ -962,20 +1095,39 @@ class TrainingWindow:
         self._label(right, T("pf_note"), fg=MUTED, bg=PANEL, font=("Segoe UI", 9), margin=260, pady=(4, 0))
         if last.get("tl"):
             self._replay(last)
-            tk.Label(self.content, text=T("tl_title"), bg=BG, fg=MUTED, font=BODY_FONT, anchor="w").pack(
-                fill="x", pady=(10, 2))
-            frise = tk.Canvas(self.content, bg=PANEL, highlightbackground=EDGE, highlightthickness=1, height=170)
-            frise.pack(fill="x")
-            frise.bind("<Configure>", lambda e: self._draw_timeline(frise, last["tl"]))
+            self._timeline(last)
+
+    def _flip_side(self, last):
+        """Cote du geste parfait montre : celui choisi pour le guide, sinon celui du dernier essai (gauche par
+        defaut)."""
+        side = {"l": -1, "r": 1}.get(self.app.store["flip_side"])
+        if side is None:
+            side = 1 if last and (last.get("angle") or -1) > 0 else -1
+        return side
+
+    def _timeline(self, last):
+        """Frise des inputs : ton dernier essai en plein, le geste parfait en pointilles par-dessus (meme axe de
+        temps depuis le depart). Sans essai : le geste parfait seul."""
+        ref = reference_flip(self._flip_side(last))
+        tk.Label(self.content, text=T("tl_title" if last else "tl_ref_title"), bg=BG, fg=MUTED, font=BODY_FONT,
+                 anchor="w").pack(fill="x", pady=(10, 2))
+        frise = tk.Canvas(self.content, bg=PANEL, highlightbackground=EDGE, highlightthickness=1, height=190)
+        frise.pack(fill="x")
+        if last:
+            frise.bind("<Configure>", lambda e: self._draw_timeline(frise, last["tl"], ref))
+            self._label(self.content, T("tl_legend"), fg=MUTED, font=("Segoe UI", 9), pady=(2, 0))
+        else:
+            frise.bind("<Configure>", lambda e: self._draw_timeline(frise, ref))
 
     def _replay(self, last):
-        """Ton dernier geste et celui de reference, rejoues en boucle au ralenti, cales sur le 1er saut."""
-        side = 1 if (last.get("angle") or -1) > 0 else -1
+        """Ton dernier geste et le geste parfait, rejoues en boucle au ralenti, cales sur le 1er saut. Sans essai :
+        le geste parfait seul."""
+        side = self._flip_side(last)
         ref = reference_flip(side)
-        mine_j1 = last["jump"] if last["jump"] is not None else ref["j1"]
         head = tk.Frame(self.content, bg=BG)
         head.pack(fill="x", pady=(10, 2))
-        tk.Label(head, text=T("rp_title"), bg=BG, fg=MUTED, font=BODY_FONT).pack(side="left")
+        tk.Label(head, text=T("rp_title" if last else "rp_ref_title"), bg=BG, fg=MUTED, font=BODY_FONT).pack(
+            side="left")
         for speed in (1.0, 0.5, 0.25):
             active = self.replay_speed == speed
             text = "×" + (f"{speed:g}".replace(".", ",") if lang() == "fr" else f"{speed:g}")
@@ -989,7 +1141,10 @@ class TrainingWindow:
         row = tk.Frame(box, bg=PANEL)
         row.pack(pady=(10, 0))
         views = []
-        for title, data, j1 in ((T("rp_you"), last["tl"], mine_j1), (T("rp_ref"), ref, ref["j1"])):
+        shown = [(T("rp_ref"), ref, ref["j1"])]
+        if last:
+            shown.insert(0, (T("rp_you"), last["tl"], last["jump"] if last["jump"] is not None else ref["j1"]))
+        for title, data, j1 in shown:
             col = tk.Frame(row, bg=PANEL)
             col.pack(side="left", padx=28)
             tk.Label(col, text=title, bg=PANEL, fg=FG, font=("Bahnschrift SemiBold", 11)).pack()
@@ -998,7 +1153,7 @@ class TrainingWindow:
             views.append((c, data, j1))
         clock = tk.Label(box, bg=PANEL, fg=FG, font=("Bahnschrift SemiBold", 11))
         clock.pack()
-        self._label(box, T("rp_hint"), fg=MUTED, bg=PANEL, font=("Segoe UI", 9), margin=70, padx=12, pady=(2, 10))
+        self._label(box, T("rp_hint" if last else "rp_ref_hint"), fg=MUTED, bg=PANEL, font=("Segoe UI", 9), margin=70, padx=12, pady=(2, 10))
         self.replay_gen += 1
         self._replay_step(self.replay_gen, views, clock, side, -0.35)
 
@@ -1055,14 +1210,16 @@ class TrainingWindow:
                           font=("Bahnschrift SemiBold", 9))
             x += 64
 
-    def _draw_timeline(self, c, tl):
-        """Frise des inputs du dernier essai (meme contenu que sur la carte de l'overlay)."""
+    def _draw_timeline(self, c, tl, ref=None):
+        """Frise des inputs du dernier essai (meme contenu que sur la carte de l'overlay). ref : geste parfait,
+        dessine en pointilles par-dessus (traits clairs, barres en contour)."""
         c.delete("all")
         colors = {"sky": "#38bdf8", "gold": "#facc15", "green": self.app.store["win_color"], "violet": "#a78bfa",
                   "amber": "#f59e0b"}
         tracks = timeline_tracks(tl)
+        ref_tracks = timeline_tracks(ref) if ref else [None] * len(tracks)
         x0, y0, x1, y1 = 12, 22, int(c.winfo_width()) - 16, int(c["height"]) - 22
-        left, t0, t1 = x0 + 120, -0.1, tl["t1"]
+        left, t0, t1 = x0 + 120, -0.1, max(tl["t1"], ref["t1"] if ref else 0)
         weights = [2 if kind == "line" else 1 for _, kind, _, _ in tracks]
         unit = (y1 - y0) / sum(weights)
 
@@ -1072,8 +1229,16 @@ class TrainingWindow:
         for t, text in timeline_ticks(t1):
             c.create_line(tx(t), y0, tx(t), y1, fill=GRID)
             c.create_text(tx(t), y1 + 10, text=text, fill=MUTED, font=("Segoe UI", 8))
+        def steps(data, mid, row):
+            points = []
+            for t, v in data:
+                if points:
+                    points += [tx(t), points[-1]]
+                points += [tx(t), mid - v * row * 0.42]
+            return points + [x1, points[-1]] if points else []
+
         top = y0
-        for (label, kind, data, color), weight in zip(tracks, weights):
+        for (label, kind, data, color), ref_track, weight in zip(tracks, ref_tracks, weights):
             row = unit * weight
             mid = top + row / 2
             top += row
@@ -1082,22 +1247,27 @@ class TrainingWindow:
                 for a, b in data:
                     c.create_rectangle(tx(a), mid - row * 0.28, max(tx(b), tx(a) + 2), mid + row * 0.28,
                                        fill=colors[color], outline="")
+                for a, b in ref_track[2] if ref_track else []:
+                    c.create_rectangle(tx(a), mid - row * 0.36, max(tx(b), tx(a) + 2), mid + row * 0.36,
+                                       outline=REF_COLOR, dash=(3, 2))
                 continue
             c.create_line(left, mid, x1, mid, fill=EDGE)
-            points = []
-            for t, v in data:
-                if points:
-                    points += [tx(t), points[-1]]
-                points += [tx(t), mid - v * row * 0.42]
+            points = steps(data, mid, row)
             if points:
-                points += [x1, points[-1]]
                 c.create_line(*points, fill=colors[color], width=2)
-        for i, (t, key) in enumerate(tl["marks"]):
+            points = steps(ref_track[2], mid, row) if ref_track else []
+            if points:
+                c.create_line(*points, fill=REF_COLOR, width=2, dash=(4, 3))
+        marks = [(t, key, FG, False) for t, key in tl["marks"]]
+        marks += [(t, key, REF_COLOR, True) for t, key in (ref["marks"] if ref else [])]
+        for t, key, color, is_ref in marks:
             if t0 <= t <= t1:
-                c.create_line(tx(t), y0 - 4, tx(t), y1, fill=FG, dash=(3, 3))
-                c.create_text(tx(t) + (-4 if i == 0 else 4), y0 - 12, anchor="e" if i == 0 else "w",
-                              text=T("pf_flip_label") if key == "flip" else T("pf_cancel").upper(), fill=FG,
-                              font=("Bahnschrift SemiBold", 9))
+                c.create_line(tx(t), y0 - 4, tx(t), y1, fill=color, dash=(3, 3))
+                if not is_ref:  # reperes du geste parfait sans libelle, pour ne pas chevaucher les tiens
+                    first = key == "flip"
+                    c.create_text(tx(t) + (-4 if first else 4), y0 - 12, anchor="e" if first else "w",
+                                  text=T("pf_flip_label") if first else T("pf_cancel").upper(), fill=color,
+                                  font=("Bahnschrift SemiBold", 9))
 
     def _draw_stick(self, c, flip):
         """Stick gauche vu de face (haut = avant) : zone 20-45 degres, trajet autour du flip, direction du flip
@@ -1156,31 +1326,24 @@ class TrainingWindow:
                        command=lambda: self.app.set_option("guide_auto", auto.get())).pack(fill="x", padx=12,
                                                                                            pady=(4, 0))
         self._label(box, T("sg_move_hint"), fg=MUTED, bg=PANEL, font=("Segoe UI", 9), margin=70, padx=12)
-        grid = tk.Frame(box, bg=PANEL)
-        grid.pack(fill="x", padx=8, pady=(4, 10))
+        # Boutons utilises pour l'analyse : resume, reglage dans la fenetre Boutons de la manette
         bindings = self.app.store["pad"]
-        for i, action in enumerate(PAD_ACTIONS):
-            row, col = divmod(i, 2)
-            cell = tk.Frame(grid, bg=PANEL)
-            cell.grid(row=row, column=col, sticky="w", padx=4, pady=2)
-            tk.Label(cell, text=T("pad_" + action), bg=PANEL, fg=MUTED, font=BODY_FONT, width=14,
-                     anchor="w").pack(side="left")
-            waiting = self.capturing == action
-            tk.Label(cell, text=T("pad_press") if waiting else bindings.get(action) or "–", bg=PANEL,
-                     fg=WARN if waiting else FG, font=("Bahnschrift SemiBold", 11), width=14 if waiting else 4,
-                     anchor="w").pack(side="left")
-            if connected and not waiting:
-                _button(cell, T("pad_change"), lambda a=action: self.capture(a), bg=EDGE).pack(side="left")
+        summary = "   ".join(f"{T('pad_' + a)} : {bindings.get(a) or '–'}" for a in PAD_ACTIONS if bindings.get(a))
+        row = tk.Frame(box, bg=PANEL)
+        row.pack(fill="x", padx=12, pady=(6, 10))
+        _button(row, T("pad_open"), self.app.open_pad, bg=EDGE).pack(side="left")
+        tk.Label(row, text=summary, bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(side="left",
+                                                                                         padx=(10, 0))
 
     def _match_timer(self):
         """Chrono de chaque engagement en match (en ligne ou contre des bots), sur l'overlay."""
         box = tk.Frame(self.content, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
         box.pack(fill="x", pady=(12, 0))
-        var = tk.BooleanVar(value=self.app.store["kickoff_alert"])
+        var = tk.BooleanVar(value=self.app.store["kick_card"])
         self.vars.append(var)
         tk.Checkbutton(box, text=T("tr_alert"), variable=var, bg=PANEL, fg=FG, font=BODY_FONT, selectcolor=BG,
                        activebackground=PANEL, activeforeground=FG, anchor="w", highlightthickness=0, bd=0,
-                       command=lambda: self.app.set_option("kickoff_alert", var.get())).pack(
+                       command=lambda: self.app.set_option("kick_card", var.get())).pack(
             fill="x", padx=12, pady=(10, 2))
         self._label(box, T("tr_how"), fg=MUTED, font=("Segoe UI", 9), bg=PANEL, margin=70, padx=12, pady=(0, 10))
 
@@ -1214,12 +1377,7 @@ class TrainingWindow:
         self._label(box, T("pad_setup_text"), fg=MUTED, bg=PANEL, font=("Segoe UI", 9), margin=70, padx=12)
         row = tk.Frame(box, bg=PANEL)
         row.pack(fill="x", padx=12, pady=(6, 10))
-        _button(row, T("pad_setup_start"), self.app.ask_pad_setup, bg=EDGE).pack(side="left")
-        _button(row, T("pad_setup_keep"), self.keep_buttons, bg=BG).pack(side="left", padx=(8, 0))
-
-    def keep_buttons(self):
-        self.app.set_option("pad_checked", True)
-        self.show()
+        _button(row, T("pad_setup_start"), self.app.open_pad, bg=EDGE).pack(side="left")
 
     def reset_guide_position(self):
         self.app.reset_guide_position()
@@ -1229,33 +1387,10 @@ class TrainingWindow:
         self.app.set_option("flip_side", value)
         self.show()
 
-    def capture(self, action, deadline=None, before=None):
-        """Assigne a `action` le prochain bouton presse sur la manette (6 s pour appuyer ; Back : aucun)."""
-        if deadline is None:
-            self.capturing = action
-            self.show()
-            self.win.after(30, lambda: self.capture(action, time_now() + 6, self.app.pad.held()))
-            return
-        if self.capturing != action or not self.win.winfo_exists():
-            return
-        new = self.app.pad.held() - before
-        if new or time_now() > deadline:
-            if new:
-                bindings = dict(self.app.store["pad"])
-                pressed = sorted(new)[0]
-                bindings[action] = "" if pressed == "Back" else pressed
-                self.app.set_option("pad", bindings)
-            self.capturing = None
-            self.app.set_option("pad_checked", True)
-            self.show()
-            return
-        self.win.after(30, lambda: self.capture(action, deadline, before & self.app.pad.held()))
-
-    def set_target(self, spawn, delta):
-        targets = dict(self.app.store["kick_targets"])
-        targets[spawn] = round(min(3.5, max(1.5, targets[spawn] + delta)), 2)
-        self.app.set_option("kick_targets", targets)
-        self.show()
+    def grade_colors(self):
+        """Couleur de chaque palier d'un essai : or, vert et rouge du joueur, orange."""
+        return {"perfect": PERFECT_COLOR, "good": self.app.store["win_color"], "close": WARN,
+                "slow": self.app.store["loss_color"]}
 
     def clear_drill(self):
         if messagebox.askyesno(T("dr_title"), T("dr_clear_confirm"), parent=self.win):

@@ -221,7 +221,7 @@ def main():
             placement = {k: v for k, v in json.load(f).items() if k in PLACEMENT}
     placement.setdefault("hud_scale", 100)  # sans elle, l'app oublie les decalages (anciennes versions)
     with open(os.path.join(TEST_DIR, "stats.json"), "w", encoding="utf-8") as f:
-        json.dump({**placement, "player_name": args.name, "lang": args.lang, "kickoff_alert": True,
+        json.dump({**placement, "player_name": args.name, "lang": args.lang, "kick_card": True,
                    "training": {"speedflip": 1, "frontflip": 2}, "summary": False, "met_alert": False,
                    "check_updates": False, "hotkeys": False, "obs": False,
                    "resume_session": False, "auto_hide": False}, f)
