@@ -10,6 +10,7 @@ import ctypes
 import hashlib
 import io
 import json
+import math
 import os
 import queue
 import re
@@ -63,7 +64,7 @@ DATA_FILE = os.path.join(DATA_DIR, "stats.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "matches.json")
 LOG_FILE = os.path.join(DATA_DIR, "overlay.log")
 
-APP_VERSION = "1.8.1"
+APP_VERSION = "1.8.2"
 REPO = "benguedj/RL_Stats"
 REPO_URL = f"https://github.com/{REPO}"
 RESUME_HOURS = 2  # une session relancee dans ce delai reprend la ou elle en etait
@@ -971,6 +972,20 @@ STATE_STATS = {"Goals": "goals", "Assists": "assists", "Saves": "saves", "Shots"
 KMH = 100000 / 3600  # la vitesse "Speed" du jeu est en km/h ; 1 unite du terrain = 1 cm
 
 
+# Depart signale en ligne : 0,072 s apres le vrai GO en moyenne (matchs prives du 6 novembre 2026, en boostant tout
+# droit sans flip : temps recales egaux a ceux de l'entrainement en decalee et au centre). L'estimation par la
+# vitesse (start_time) le sous-estime de 0,015 s ; elle ne s'en ecarte que de quelques millisecondes d'un
+# engagement a l'autre, sauf rares valeurs aberrantes : bornee a +/- 0,012 s autour de la moyenne
+START_LAG, START_BIAS, START_SPREAD = 0.072, 0.015, 0.012
+
+
+def start_time(v):
+    """Temps mis pour atteindre la vitesse v (uu/s) depuis l'arret, accelerateur et boost a fond. Constantes de
+    RLBot : boost 991.7 uu/s2, accelerateur 1600 uu/s2 a l'arret qui baisse lineairement jusqu'a 160 a 1400 uu/s."""
+    a0, slope = 991.7 + 1600, 1440 / 1400
+    return math.log(a0 / (a0 - slope * v)) / slope
+
+
 def kick_spawn(distance):
     """Position de depart d'un engagement d'apres la distance parcourue jusqu'au contact (unites du jeu) :
     environ 3 100 en diagonale, 3 650 en decale, 4 400 au centre. None si ce n'etait pas un engagement."""
@@ -1063,7 +1078,8 @@ class MatchTracker:
             now = self.now
             if not guid:
                 self.last_round = now
-            self.kick = {"go": now, "t": None, "dist": 0.0, "at": now, "v": 0.0, "ball_still": None, "cars": {}}
+            self.kick = {"go": now, "t": None, "dist": 0.0, "at": now, "v": 0.0, "ball_still": None, "starts": {},
+                         "cars": {}}
             if self.guid and self.players:
                 self.on_start(self)
         elif event == "BallHit":
@@ -1258,7 +1274,10 @@ class MatchTracker:
             if not isinstance(q.get("Speed"), (int, float)):
                 continue
             v = float(q["Speed"]) * KMH
-            car = kick["cars"].setdefault(q.get("Name", "").strip().lower(), [0.0, kick["go"], 0.0, None])
+            name = q.get("Name", "").strip().lower()
+            car = kick["cars"].setdefault(name, [0.0, kick["go"], 0.0, None])
+            if car[2] == 0 and 0 < v <= 1000 and name not in kick["starts"]:
+                kick["starts"][name] = now - kick["go"] - start_time(v)
             car[0] += (car[2] + v) / 2 * (now - car[1])
             car[1], car[2], car[3] = now, v, q.get("TeamNum")
         speed = ball.get("Speed")
@@ -1274,6 +1293,8 @@ class MatchTracker:
         exact=False : contact deduit de l'etat du jeu (10 fois par seconde), pas d'un BallHit."""
         kick = self.kick
         kick["t"] = self.now
+        lag = self._start_lag(kick)
+        kick["go"] += lag
         kick["dt"] = kick["t"] - kick["go"] - (0 if exact else 0.05)
         kick["exact"], kick["miss"], kick["result"] = exact, False, None
         toucher = ((data.get("Players") or [{}])[0]) or {}
@@ -1297,6 +1318,21 @@ class MatchTracker:
                     self.kick_times.append(round(kick["dt"], 2))
                     self.kick_spawns.append(kick["spawn"] or "")
             self.on_kickoff(dict(kick))
+
+    def _start_lag(self, kick):
+        """En ligne, le jeu signale le depart en retard sur le vrai GO (voir START_LAG) ; hors ligne, au moment ou la
+        voiture bouge. Vrai depart d'apres la vitesse des voitures a leur premier etat en mouvement : le plus tot
+        (celle qui accelere et boost a fond). Sans voiture mesuree : retard moyen."""
+        if not self.guid:
+            return 0.0
+        starts = [t for t in kick["starts"].values() if -0.2 <= t <= 0.05]
+        if not starts:
+            log("Engagement : depart recale du retard moyen (aucune voiture mesuree)")
+            return -START_LAG
+        raw = min(starts) - START_BIAS
+        lag = min(-START_LAG + START_SPREAD, max(-START_LAG - START_SPREAD, raw))
+        log(f"Engagement : depart recale de {lag:+.3f} s (estime {raw:+.3f}, {len(starts)} voiture(s) mesuree(s))")
+        return lag
 
     def _toucher_spawn(self, kick, team):
         """Position de depart d'un coequipier ou d'un adversaire qui touche le premier. Le jeu ne donne pas la
@@ -2715,7 +2751,7 @@ class Overlay:
                 "state": "opp" if who == "opp" else "me", "cells": []}
         if attempt["spawn"]:
             info.update(label=info["label"] + " · " + T("tr_" + attempt["spawn"]).upper(),
-                        state=kick_grade(attempt, match=True), text=kick_gap_text(attempt, match=True))
+                        state=kick_grade(attempt), text=kick_gap_text(attempt))
         if who == "me":
             if self.pad.connected:
                 end = kick["go"] + kick["dt"]

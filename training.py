@@ -32,36 +32,29 @@ KICKOFF_PACK = "A503-264C-A7EB-D282"  # pack d'entrainement personnalise d'engag
 PAD_ACTIONS = ("jump", "boost", "roll", "roll_l", "roll_r")  # boutons a assigner ; textes : T("pad_" + action)
 # Speed flip parfait : temps du GO au contact, par position. Estime avec la physique du jeu (constantes de RLBot :
 # boost 991.7 uu/s2, accelerateur 1600 -> 0 a 1410 uu/s, impulsion du flip 500 uu/s) : boost seul en ligne droite
-# 2.04 / 2.29 / 2.63 s, speed flip ideal 1.89 / 2.13 / 2.47 s. Parfait : a 0.06 s de l'ideal (precision de la
-# mesure, trajectoire jamais tout a fait droite). Bon : plus rapide que sans flip (le flip fait gagner du temps).
-# Presque : jusqu'a 0.1 s plus lent que sans flip. Lent : au-dela
-PERFECT = {"diag": 1.95, "offc": 2.20, "back": 2.53}
-NO_FLIP = {"diag": 2.05, "offc": 2.30, "back": 2.60}
+# 2.04 / 2.29 / 2.63 s, speed flip ideal 1.89 / 2.13 / 2.47 s. Parfait : l'ideal lui-meme, sans marge (les
+# meilleurs adversaires croises touchent en diagonale vers 1.89). Bon : au moins aussi bien qu'un engagement en flip
+# diagonal classique (boost, flip diagonal sans cancel ; meilleurs temps du joueur en entrainement le 6 novembre
+# 2026 : 1.95 / 2.25 / 2.55 s, medianes 2.01 / 2.27 / 2.57). Diagonale du pack d'entrainement 60 unites plus pres du
+# ballon qu'en match (~0.035 s) : pas compensee. Repere : sans flip, en boostant tout droit, 2.05 / 2.29 / 2.62 s en
+# match. Presque : jusqu'a 0.1 s au-dessus du vert. Lent : au-dela. Memes seuils en match : le chrono y est recale
+# sur le vrai depart (MatchTracker._start_lag)
+PERFECT = {"diag": 1.89, "offc": 2.13, "back": 2.47}
+GOOD = {"diag": 1.95, "offc": 2.25, "back": 2.55}
 CLOSE = 0.10
-# En match, les temps mesures sont environ 0.07 s plus courts qu'en entrainement (journal de matchs en ligne :
-# diagonale 1.87 au mieux pour le joueur, 1.83 pour des adversaires ; decalee 2.15 ; en entrainement, record a 1.95)
-MATCH_SHIFT = 0.07
-MATCH_PERFECT = {k: round(v - MATCH_SHIFT, 2) for k, v in PERFECT.items()}
-MATCH_NO_FLIP = {k: round(v - MATCH_SHIFT, 2) for k, v in NO_FLIP.items()}
 GRADE_TEXTS = {"perfect": "dr_perfect", "good": "dr_good", "close": "dr_close", "slow": "dr_slow"}
 PERFECT_COLOR = "#facc15"  # or, comme le bandeau et la carte (designs.GOLD)
 REF_COLOR = "#cbd5e1"  # geste parfait sur la frise (pointilles)
 
 
-def kick_refs(match):
-    """(parfait, sans flip) : temps de reference par position, en entrainement ou en match."""
-    return (MATCH_PERFECT, MATCH_NO_FLIP) if match else (PERFECT, NO_FLIP)
-
-
-def kick_grade(attempt, match=False):
+def kick_grade(attempt):
     """"perfect", "good", "close" ou "slow" pour un essai touche (seuils fixes par position)."""
     dt, spawn = attempt["dt"], attempt["spawn"]
-    perfect, no_flip = kick_refs(match)
-    if dt <= perfect[spawn]:
+    if dt <= PERFECT[spawn]:
         return "perfect"
-    if dt <= no_flip[spawn]:
+    if dt <= GOOD[spawn]:
         return "good"
-    return "close" if dt <= no_flip[spawn] + CLOSE else "slow"
+    return "close" if dt <= GOOD[spawn] + CLOSE else "slow"
 
 
 def kick_records(store):
@@ -76,15 +69,14 @@ def kick_records(store):
     return records
 
 
-def kick_gap_text(attempt, match=False):
-    """Texte a cote du temps : parfait, ecart avec le parfait (bon), ou avec le temps sans flip (presque, lent)."""
-    grade, spawn = kick_grade(attempt, match), attempt["spawn"]
-    perfect, no_flip = kick_refs(match)
+def kick_gap_text(attempt):
+    """Texte a cote du temps : parfait, ecart avec le parfait (bon), ou avec le vert (presque, lent)."""
+    grade, spawn = kick_grade(attempt), attempt["spawn"]
     if grade == "perfect":
         return T("gap_perfect")
     if grade == "good":
-        return T("gap_to_perfect", d=seconds_text(attempt["dt"] - perfect[spawn]))
-    return T("gap_no_flip", d=seconds_text(attempt["dt"] - no_flip[spawn]))
+        return T("gap_to_perfect", d=seconds_text(attempt["dt"] - PERFECT[spawn]))
+    return T("gap_to_good", d=seconds_text(attempt["dt"] - GOOD[spawn]))
 
 
 def diff_text(value):
@@ -507,10 +499,10 @@ You leave as usual but reach the ball a split second after the opponent, so you 
 DRILL_HELP = ("""## Comment s'entraîner
 1. Entraînement > Entraînement personnalisé : lance un pack d'engagements (voiture sur les vraies positions de départ, ballon au centre).
 2. Le chrono part à ton premier mouvement et s'arrête au contact avec le ballon. L'app reconnaît la position de départ à la distance que ta voiture a parcourue.
-3. Après chaque tir, l'overlay affiche ton temps et sa couleur : or si ton speed flip est parfait, vert s'il te fait gagner du temps, orange si tu es presque au temps sans flip, rouge si tu es plus lent.
+3. Après chaque tir, l'overlay affiche ton temps et sa couleur : or si ton speed flip est parfait, vert s'il égale ou bat un engagement en flip diagonal classique, orange si tu es à moins de 0,1 s du vert, rouge si tu es plus lent.
 - Ça marche aussi en match privé ou d'exhibition contre des bots : le chrono part alors au GO.
 > Les packs avec une limite de temps (2 s pour celui de Musty) arrêtent le tir avant le contact s'il est trop lent : l'app le compte comme « pas touché ».
-- Le vert commence au temps qu'on met en boostant tout droit, sans flip : au-dessus, ton flip te fait perdre du temps. Un speed flip parfait (en or) est environ 0,1 s plus rapide.
+- Pour le vert, il faut égaler ou battre un bon engagement en flip diagonal classique (boost, flip diagonal sans cancel : 1,95 s en diagonale, 2,25 s décalée, 2,55 s au centre) : 1,95 / 2,25 / 2,55 s au plus. Un speed flip parfait (en or) est encore 0,05 à 0,1 s plus rapide.
 ## Lire la frise de tes inputs
 Sous ton dernier speed flip (et sur la carte de l'overlay), chaque ligne montre un input dans le temps, du départ au cancel. Un bon speed flip vers la gauche ressemble à ça, de gauche à droite :
 1. Boost : la barre orange commence à 0 et ne s'arrête plus.
@@ -523,10 +515,10 @@ Sous ton dernier speed flip (et sur la carte de l'overlay), chaque ligne montre 
               """## How to practice
 1. Training > Custom training: load a kickoff pack (car on the real kickoff spawns, ball in the center).
 2. The timer starts on your first movement and stops when you touch the ball. The app recognizes your spawn from the distance your car traveled.
-3. After each shot, the overlay shows your time and its color: gold when your speed flip is perfect, green when it saves time, orange when you are close to the no-flip time, red when you are slower.
+3. After each shot, the overlay shows your time and its color: gold when your speed flip is perfect, green when it matches or beats a classic diagonal flip kickoff, orange when you are within 0.1 s of green, red when you are slower.
 - It also works in private matches or exhibitions against bots: the timer then starts at GO.
 > Packs with a time limit (2 s in Musty's pack) end the shot before contact if you are too slow: the app counts it as "missed".
-- Green starts at the time it takes to boost straight without a flip: above it, your flip loses time. A perfect speed flip (in gold) is about 0.1 s faster.
+- For green, you must match or beat a good classic diagonal flip kickoff (boost, diagonal flip without a cancel: 1.95 s diagonal, 2.25 s off-center, 2.55 s back center): 1.95 / 2.25 / 2.55 s at most. A perfect speed flip (in gold) is another 0.05 to 0.1 s faster.
 ## Reading your input timeline
 Under your latest speed flip (and on the overlay card), each line shows one input over time, from the start to the cancel. A good speed flip to the left looks like this, from left to right:
 1. Boost: the orange bar starts at 0 and never stops.
@@ -1015,12 +1007,10 @@ class TrainingWindow:
         for col, (text, color) in enumerate(heads):
             tk.Label(grid, text=text, bg=PANEL, fg=color, font=("Bahnschrift SemiBold", 11), anchor="w").grid(
                 row=0, column=col, sticky="w", padx=(0, 18))
-        rows = [(spawn, match) for match in (False, True) for spawn in SPAWN_KEYS]
-        for row, (spawn, match) in enumerate(rows, start=1):
-            perfect, no_flip = kick_refs(match)[0][spawn], kick_refs(match)[1][spawn]
-            name = T("tr_" + spawn) + (" · " + T("dr_in_match") if match else "")
-            cells = [name, "≤ " + seconds_text(perfect), "≤ " + seconds_text(no_flip),
-                     "≤ " + seconds_text(no_flip + CLOSE), "> " + seconds_text(no_flip + CLOSE)]
+        for row, spawn in enumerate(SPAWN_KEYS, start=1):
+            perfect, good = PERFECT[spawn], GOOD[spawn]
+            cells = [T("tr_" + spawn), "≤ " + seconds_text(perfect), "≤ " + seconds_text(good),
+                     "≤ " + seconds_text(good + CLOSE), "> " + seconds_text(good + CLOSE)]
             for col, text in enumerate(cells):
                 tk.Label(grid, text=text, bg=PANEL, fg=MUTED if col == 0 else FG, font=BODY_FONT, anchor="w").grid(
                     row=row, column=col, sticky="w", padx=(0, 18))

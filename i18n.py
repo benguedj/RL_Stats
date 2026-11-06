@@ -275,14 +275,15 @@ TEXTS = {
                  "Show a small card after each kickoff in a match"),
     "tr_how": ("Discrète, à côté de l'overlay pendant 4 s, à chaque engagement : le temps entre le GO et le "
                "premier contact de celui qui touche en premier (toi, un coéquipier ou l'adversaire), sa position "
-               "et sa couleur (parfait, bon, presque, lent) d'après des temps de référence propres aux matchs, un "
-               "peu plus courts qu'en entraînement. L'angle et le cancel de ton flip si une manette est branchée. "
+               "et sa couleur (parfait, bon, presque, lent) d'après les mêmes temps de référence qu'en "
+               "entraînement (le chrono est recalé sur le vrai départ, signalé un peu en retard en ligne). L'angle et le cancel de ton flip si une manette est branchée. "
                "La position de l'adversaire est celle de ton équipe : les positions de départ sont symétriques, "
                "et celui qui y va (le plus proche du ballon, celui de gauche en cas d'égalité) est le joueur de "
                "ton équipe qui a le plus roulé au moment du contact. En ligne et hors ligne, pas en entraînement libre (pas de coup d'envoi).",
                "Discreet, next to the overlay for 4 s, at each kickoff: the time between GO and the first touch "
                "of whoever touches first (you, a teammate or the opponent), their position and color (perfect, "
-               "good, close, slow) from reference times specific to matches, a bit shorter than in training. "
+               "good, close, slow) from the same reference times as in training (the timer is set back to the real start, "
+               "reported slightly late online). "
                "The angle and cancel of your flip when a controller is plugged in. The opponent's position is "
                "your team's: spawns are symmetric, and the one who goes (closest to the ball, the left one on a "
                "tie) is the player of your team who drove the farthest by the time of the touch. Online and offline, not in free play "
@@ -301,7 +302,7 @@ TEXTS = {
     "drill_hit": ("{spawn} · {s} · {d}", "{spawn} · {s} · {d}"),
     "gap_perfect": ("parfait !", "perfect!"),
     "gap_to_perfect": ("à {d} du parfait", "{d} from perfect"),
-    "gap_no_flip": ("{d} plus lent que sans flip", "{d} slower than no flip"),
+    "gap_to_good": ("{d} au-dessus du vert", "{d} above green"),
     "drill_miss": ("PAS TOUCHÉ · {s} · TEMPS DU PACK ÉCOULÉ", "MISSED · {s} · PACK TIME RAN OUT"),
     "gap_miss": ("temps du pack écoulé", "pack time ran out"),
     "dr_title": ("Engagement rapide (fast kickoff)", "Fast kickoff"),
@@ -309,8 +310,8 @@ TEXTS = {
                  "personnalisé ou hors ligne. Tous tes essais sont enregistrés.",
                  "Touch the ball as fast as you can from each spawn, in custom training or offline. "
                  "All your attempts are saved."),
-    "dr_tile_sub": ("{ok} sur {n} plus rapides que sans flip · parfaits : {p} · record {best}",
-                    "{ok} of {n} faster than no flip · perfect: {p} · record {best}"),
+    "dr_tile_sub": ("{ok} sur {n} en vert ou en or · parfaits : {p} · record {best}",
+                    "{ok} of {n} green or gold · perfect: {p} · record {best}"),
     "dr_record_card": ("Record -{d}", "Record -{d}"),
     "dr_record_banner": ("NOUVEAU RECORD ({d} de mieux)", "NEW RECORD ({d} better)"),
     "dr_perfect": ("Parfait", "Perfect"),
@@ -324,15 +325,12 @@ TEXTS = {
                      "In the game: Training > Custom training > Code, then paste the code (Ctrl + V). The speed "
                      "flip guide shows up on its own during kickoffs."),
     "dr_levels": ("Couleurs de tes temps", "Your time colors"),
-    "dr_levels_hint": ("Vert : ton speed flip te fait gagner du temps par rapport au même départ en boostant tout "
-                       "droit sans flip. Or : speed flip parfait, environ 0,1 s plus rapide. Temps estimés avec la "
-                       "physique du jeu. En match, le chrono mesure environ 0,07 s de moins qu'en entraînement : "
-                       "la petite carte de match utilise ses propres temps de référence.",
-                       "Green: your speed flip saves time compared with the same start boosting straight without "
-                       "a flip. Gold: perfect speed flip, about 0.1 s faster. Times estimated with the game "
-                       "physics. In a match, the timer measures about 0.07 s less than in training: the match card "
-                       "uses its own reference times."),
-    "dr_in_match": ("en match", "in a match"),
+    "dr_levels_hint": ("Vert : ton speed flip égale ou bat un bon engagement en flip diagonal classique (1,95 / 2,25 / "
+                       "2,55 s). Or : speed flip parfait, calculé avec la physique du jeu. Mêmes temps en match : le jeu y signale le départ environ 0,06 s "
+                       "après le vrai GO, le chrono est donc recalé sur le vrai départ des voitures.",
+                       "Green: your speed flip matches or beats a good classic diagonal flip kickoff (1.95 / 2.25 / 2.55 s). "
+                       "Gold: perfect speed flip, computed with the game physics. Same times in a match: the game reports the start about 0.06 s after the "
+                       "real GO there, so the timer is set back to when the cars really start."),
     "dr_attempts": ("Derniers essais", "Latest attempts"),
     "dr_none": ("Aucun essai pour l'instant : lance un pack d'engagements en entraînement personnalisé.",
                 "No attempts yet: load a kickoff pack in custom training."),

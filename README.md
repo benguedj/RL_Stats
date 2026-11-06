@@ -61,7 +61,7 @@ Once the *"WAITING FOR GAME"* banner disappears, you're connected.
 | **Tray icon & taskbar button** | Click to hide / show the overlay, right-click for the menu. |
 | **Session card** | One click copies an image of your session to the clipboard, ready to paste in Discord. |
 | **Advanced stats** | Kickoffs won, average boost, time at 0 boost, supersonic time, map of where your goals go in, for a period or a single game. |
-| **Training (beta)** | Guides for kickoffs and mechanics (speed flip, half flip, wavedash, musty, flip reset...). **Fast kickoff**: in custom training (pack code `A503-264C-A7EB-D282`, copy button in the app), each attempt is timed and colored: gold **Perfect** under the time of an ideal speed flip (1.95 s diagonal, 2.20 s off-center, 2.53 s back center), green when your flip beats boosting straight without a flip (2.05 / 2.30 / 2.60 s), orange when close, red when slower; your record for each spawn is kept and celebrated when you beat it. And, with an Xbox-compatible controller, your speed flip is analyzed with the timings of the BakkesMod plugin SpeedFlipTrainer (first jump, flip angle, cancel, air roll, boost), with tips, a slow-motion replay of your stick next to the perfect motion, and the perfect inputs drawn over your input timeline. A stick guide shows up on the overlay during kickoff training, with a timing bar that fills from the start so you can anticipate your first jump (green zone of SpeedFlipTrainer). In matches, a small discreet card shows the kickoff of whoever touches the ball first (you, a teammate or the opponent): time, spawn and color, with reference times measured in matches (about 0.07 s shorter than in training), plus your flip angle and cancel with a controller. |
+| **Training (beta)** | Guides for kickoffs and mechanics (speed flip, half flip, wavedash, musty, flip reset...). **Fast kickoff**: in custom training (pack code `A503-264C-A7EB-D282`, copy button in the app), each attempt is timed and colored: gold **Perfect** under the time of an ideal speed flip (1.89 s diagonal, 2.13 s off-center, 2.47 s back center), green when your speed flip matches or beats a classic diagonal flip kickoff (1.95 / 2.25 / 2.55 s at most), orange within 0.1 s of green, red when slower; your record for each spawn is kept and celebrated when you beat it. And, with an Xbox-compatible controller, your speed flip is analyzed with the timings of the BakkesMod plugin SpeedFlipTrainer (first jump, flip angle, cancel, air roll, boost), with tips, a slow-motion replay of your stick next to the perfect motion, and the perfect inputs drawn over your input timeline. A stick guide shows up on the overlay during kickoff training, with a timing bar that fills from the start so you can anticipate your first jump (green zone of SpeedFlipTrainer). In matches, a small discreet card shows the kickoff of whoever touches the ball first (you, a teammate or the opponent): time, spawn and color, with the same reference times as in training (the timer is set back to the real start, which the game reports about 0.06 s late online), plus your flip angle and cancel with a controller. |
 | **Tilt alert** | Suggests a break after 3 losses in a row or 2 hours of play (off by default). |
 | **Smart display** | Hides itself when the game is closed or minimized, resumes your session if restarted within 2 h, can start with Windows and stay hidden until the game starts. |
 | **Update notifications** | Tells you when a new version is available on GitHub. |
@@ -201,9 +201,9 @@ démarrage avec Windows, notification des mises à jour, français / anglais.
 
 **Entraînement (bêta)** : guides des engagements et des mécaniques (speed flip, half flip, wavedash, musty,
 flip reset...). **Engagement rapide** : en entraînement personnalisé (pack `A503-264C-A7EB-D282`, à copier
-depuis l'appli), chaque essai est chronométré et coloré : **Parfait** en or sous le temps d'un speed flip idéal (1,95 s en
-diagonale, 2,20 s décalée, 2,53 s au centre), vert si ton flip bat le même départ en boostant tout droit sans flip
-(2,05 / 2,30 / 2,60 s), orange si c'est presque, rouge si c'est plus lent ; ton record par position est gardé et salué quand tu le bats.
+depuis l'appli), chaque essai est chronométré et coloré : **Parfait** en or sous le temps d'un speed flip idéal (1,89 s en
+diagonale, 2,13 s décalée, 2,47 s au centre), vert si ton speed flip égale ou bat un engagement en flip
+diagonal classique (1,95 / 2,25 / 2,55 s au plus), orange à moins de 0,1 s du vert, rouge si c'est plus lent ; ton record par position est gardé et salué quand tu le bats.
 Avec une manette compatible Xbox, ton speed flip est
 analysé avec les repères du plugin BakkesMod SpeedFlipTrainer (1er saut, angle du flip, cancel, air roll,
 boost) : conseils, ton geste rejoué au ralenti à côté du geste parfait, et les inputs parfaits dessinés sur la frise de
@@ -211,7 +211,8 @@ tes inputs. Un guide du stick s'affiche sur
 l'overlay pendant l'entraînement d'engagements (fermable avec sa croix), avec une barre de timing qui se remplit
 depuis le départ pour anticiper ton premier saut (zone verte de SpeedFlipTrainer). En match, une petite carte discrète donne
 l'engagement de celui qui touche le ballon en premier (toi, un coéquipier ou l'adversaire) : temps, position
-et couleur, avec des temps de référence mesurés en match (environ 0,07 s plus courts qu'en entraînement), et
+et couleur, avec les mêmes temps de référence qu'en entraînement (le chrono est recalé sur le vrai départ, signalé environ
+0,06 s en retard en ligne), et
 l'angle et le cancel de ton flip avec une manette. Tes boutons (saut, boost, air roll) se
 règlent dans menu → *Boutons de la manette* (aussi dans les Paramètres) : *Changer* à côté d'un bouton puis appuie
 dessus sur la manette, ou *Régler mes boutons* pour tous les faire d'affilée. La fenêtre s'ouvre toute seule la
